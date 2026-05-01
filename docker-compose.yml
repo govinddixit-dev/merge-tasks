@@ -73,7 +73,8 @@ services:
       SESSION_SECRET: docker-compose-dev-session-secret-min-32-chars
       CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
       OPENAI_API_KEY: docker-placeholder-openai-not-used-until-copilot
-      RESEND_API_KEY: re_docker_placeholder_replace_for_email
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-onboarding@resend.dev}
       # Pulled from the host `.env` next to this compose file (Compose variable substitution).
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -104,7 +105,8 @@ services:
       SESSION_SECRET: docker-compose-dev-session-secret-min-32-chars
       CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
       OPENAI_API_KEY: docker-placeholder-openai-not-used-until-copilot
-      RESEND_API_KEY: re_docker_placeholder_replace_for_email
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-onboarding@resend.dev}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:

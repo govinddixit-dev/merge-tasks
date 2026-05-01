@@ -24,5 +24,18 @@ for (let i = 0; i < 12; i++) {
   dir = parent;
 }
 
-if (envPath) dotenv.config({ path: envPath });
-else dotenv.config();
+if (envPath) {
+  dotenv.config({ path: envPath });
+  // `dotenv` does not override existing `process.env` keys — not even when the
+  // value is an empty string. IDEs / shells sometimes export `VAR=` which would
+  // block `.env` (e.g. RESEND_API_KEY) and break Resend with "API key is invalid".
+  const parsed = dotenv.parse(fs.readFileSync(envPath, "utf8"));
+  for (const [key, value] of Object.entries(parsed)) {
+    const cur = process.env[key];
+    if (cur === undefined || cur === "") {
+      process.env[key] = value;
+    }
+  }
+} else {
+  dotenv.config();
+}
