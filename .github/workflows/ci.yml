@@ -1,0 +1,331 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-flight runs for the same ref when a new commit lands. Without
+# this, rapid pushes queue up wasted minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Match the production EC2 server (see /home/ubuntu/mergetasks/start-server.sh
+  # which invokes /home/ubuntu/.nvm/versions/node/v20.20.2/bin/node). Keep this
+  # in sync with that binary — a Node 20 / Node 22 drift has bitten us before.
+  NODE_VERSION: "20.20.2"
+
+jobs:
+  # ── Job 1: TypeScript ───────────────────────────────────────────────────────
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript (tsc --noEmit)
+        run: pnpm exec tsc --noEmit
+
+  # ── Job 2: Tests ────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mergetasks_test
+          MYSQL_USER: mergetasks
+          MYSQL_PASSWORD: mergetasks_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -proot"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+
+      # server/queue/redisClient.ts throws at module load when REDIS_URL is
+      # unset (Task 1b migrated rateLimiter, tokenBlocklist, and pkceStore
+      # onto the singleton — any test that transitively imports those modules
+      # now needs a reachable Redis). Plain redis:// (no TLS) against the
+      # loopback port is fine here; production uses rediss:// to ElastiCache.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      CI: "true"
+
+      # Service-container MySQL. ?ssl=false disables TLS on the driver side —
+      # server/db.ts:55 reads this query param. DB_SSL=false is also set as a
+      # belt-and-braces signal for any code path that reads it directly.
+      DATABASE_URL: mysql://mergetasks:mergetasks_pass@127.0.0.1:3306/mergetasks_test?ssl=false
+      DB_SSL: "false"
+
+      # Service-container Redis. Per Decision 27 + Task 1b consumer migration.
+      REDIS_URL: redis://127.0.0.1:6379
+
+      # Safe test defaults — these are NOT real credentials. They exist only
+      # so modules that read them at import time (server/_core/env.ts asserts
+      # SESSION_SECRET in any CI environment) don't hard-fail during a test
+      # run. None of the tests make real calls to OpenAI / Resend / Stripe.
+      SESSION_SECRET: test-session-secret-minimum-32-chars-long
+      CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      APP_BASE_URL: http://localhost:3000
+      OPENAI_API_KEY: test-openai-key-not-used-in-ci
+      RESEND_API_KEY: test-resend-key-not-used-in-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u mergetasks -pmergetasks_pass --silent 2>/dev/null; then
+              echo "MySQL is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::MySQL never became ready"
+          exit 1
+
+      - name: Wait for Redis
+        run: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/6379) 2>/dev/null; then
+              echo "Redis is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Redis never became ready"
+          exit 1
+
+      - name: Apply schema migrations
+        run: pnpm db:push
+
+      - name: Seed test data
+        # server/aiInsights.test.ts, server/estimatesInvoices.test.ts, and a
+        # handful of other tests assert against the seeded fixture (user
+        # admin@mergetasks.dev + 10 products + 3 proposals + 2 orders).
+        # scripts/seed.ts defaults DB_NAME to "mergetasks"; override to the
+        # CI schema name.
+        env:
+          DB_NAME: mergetasks_test
+          DB_USER: mergetasks
+          DB_PASSWORD: mergetasks_pass
+        run: pnpm exec tsx scripts/seed.ts
+
+      - name: Run tests
+        run: pnpm exec vitest run --reporter=dot
+
+  # ── Job 3: Playwright E2E (per Decision 41 — PR-merge-blocking) ─────────────
+  # Depends on `test` per Decision 41: unit tests must pass before we spend the
+  # +2–4 minutes booting browsers. Reuses the MySQL 8.0 + redis:7-alpine service
+  # containers from the test job definition (each job gets its own fresh
+  # containers). Phase 1 Task 1a scope is infrastructure + one smoke spec
+  # (e2e/ci-smoke.spec.ts) — the rest of the existing e2e/*.spec.ts files
+  # depend on seeded demo users and are excluded here until a follow-up task.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: [typecheck, test]
+    timeout-minutes: 10
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mergetasks_test
+          MYSQL_USER: mergetasks
+          MYSQL_PASSWORD: mergetasks_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -proot"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      CI: "true"
+
+      # Server binds to PORT; playwright.config.ts baseURL is :5000.
+      PORT: "5000"
+
+      DATABASE_URL: mysql://mergetasks:mergetasks_pass@127.0.0.1:3306/mergetasks_test?ssl=false
+      DB_SSL: "false"
+      REDIS_URL: redis://127.0.0.1:6379
+
+      SESSION_SECRET: test-session-secret-minimum-32-chars-long
+      CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      APP_BASE_URL: http://localhost:5000
+      ALLOWED_ORIGINS: http://localhost:5000
+      OPENAI_API_KEY: test-openai-key-not-used-in-ci
+      RESEND_API_KEY: test-resend-key-not-used-in-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers (chromium + OS deps)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u mergetasks -pmergetasks_pass --silent 2>/dev/null; then
+              echo "MySQL is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::MySQL never became ready"
+          exit 1
+
+      - name: Wait for Redis
+        run: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/6379) 2>/dev/null; then
+              echo "Redis is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Redis never became ready"
+          exit 1
+
+      - name: Apply schema migrations
+        run: pnpm db:push
+
+      - name: Run Playwright CI smoke
+        # Only run the dedicated CI smoke spec (see ci-smoke.spec.ts). The
+        # existing e2e/*.spec.ts files require demo-user seed + auth fixtures
+        # that Task 1a does not wire; Task 1b-follow-on will revive them.
+        run: pnpm exec playwright test e2e/ci-smoke.spec.ts --project=chromium
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # ── Job 4: Build (only if typecheck + tests pass) ───────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck, test]
+    timeout-minutes: 5
+    env:
+      VITE_APP_TITLE: MergeTasks
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (vite + esbuild)
+        # NODE_ENV=production scoped to build step only so install step sees
+        # full graph (devDeps: vite, esbuild). See Phase 1 hotfix task doc.
+        env:
+          NODE_ENV: production
+        run: pnpm build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  # ── Job 5: Deploy notification (main only, after all pass) ──────────────────
+  # The production server already picks up pushes via /api/deploy/webhook (see
+  # README "Deployment" section). This job only prints a summary so the
+  # workflow run UI shows a clear "all green → deploy triggered" line. We do
+  # NOT re-fire the webhook from here because that would double-deploy.
+  notify-deploy:
+    name: Notify Deploy
+    runs-on: ubuntu-latest
+    needs: [typecheck, test, e2e, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 1
+    steps:
+      - name: Summary
+        run: |
+          echo "::notice title=CI green on main::Typecheck, tests, and build all passed. The production server will pick up ${{ github.sha }} via /api/deploy/webhook (see deploy.log on the server for progress)."

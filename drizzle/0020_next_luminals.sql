@@ -1,0 +1,22 @@
+CREATE TABLE `printRequests` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`storeId` int NOT NULL,
+	`clientId` int NOT NULL,
+	`userId` int NOT NULL,
+	`requestedBy` varchar(320) NOT NULL,
+	`requestedByName` varchar(255),
+	`printCategory` enum('business_cards','envelopes','letterhead','brochures','flyers','banners','signage','promotional','packaging','other') NOT NULL DEFAULT 'other',
+	`printTitle` varchar(255) NOT NULL,
+	`printDescription` text,
+	`printQuantity` int NOT NULL DEFAULT 1,
+	`attachments` json,
+	`printStatus` enum('submitted','reviewed','quoted','approved','in_production','completed','rejected') NOT NULL DEFAULT 'submitted',
+	`quotedPrice` decimal(10,2),
+	`distributorNotes` text,
+	`estimatedDelivery` timestamp,
+	`reviewedAt` timestamp,
+	`completedAt` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `printRequests_id` PRIMARY KEY(`id`)
+);

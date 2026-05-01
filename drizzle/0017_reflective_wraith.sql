@@ -1,0 +1,1 @@
+ALTER TABLE `proposals` ADD `approvalRouting` enum('parallel','sequential') DEFAULT 'parallel' NOT NULL;

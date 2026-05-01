@@ -1,0 +1,119 @@
+# MergeTasks — full stack for local / demo Docker runs.
+#
+# Usage:
+#   docker compose up --build
+#   Open http://localhost:3080  (host 3080 → app 3000; avoids clashing with a local dev server on :3000)
+#
+# Compose reads `.env` in this directory for ${VAR} substitution. Put GOOGLE_CLIENT_ID,
+# GOOGLE_CLIENT_SECRET, etc. there so app/worker receive them. Override others with
+# `docker compose --env-file your.env up` if needed.
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mergetasks
+      MYSQL_USER: mergetasks
+      MYSQL_PASSWORD: mergetasks_pass
+    volumes:
+      - mergetasks_mysql_data:/var/lib/mysql
+    # No host port publish — avoids clashing with a local MySQL on :3306.
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    # Published only on the Compose network (no host bind) so host :6379 stays free.
+    command: redis-server --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    image: mergetasks:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3080:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:'+(process.env.PORT||3000)+'/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      RUN_MIGRATIONS: "true"
+      MYSQL_WAIT_HOST: mysql
+      MYSQL_WAIT_USER: mergetasks
+      MYSQL_WAIT_PASSWORD: mergetasks_pass
+      DATABASE_URL: mysql://mergetasks:mergetasks_pass@mysql:3306/mergetasks?ssl=false
+      DB_SSL: "false"
+      REDIS_URL: redis://redis:6379
+      APP_BASE_URL: http://localhost:3080
+      ALLOWED_ORIGINS: http://localhost:3080
+      VITE_APP_ID: mergetasks
+      SESSION_SECRET: docker-compose-dev-session-secret-min-32-chars
+      CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      OPENAI_API_KEY: docker-placeholder-openai-not-used-until-copilot
+      RESEND_API_KEY: re_docker_placeholder_replace_for_email
+      # Pulled from the host `.env` next to this compose file (Compose variable substitution).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Stripe omitted — validateEnv forbids sk_test_* when NODE_ENV=production.
+      # Add STRIPE_SECRET_KEY (sk_live_... in real prod) via env_file / override when needed.
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: mergetasks:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "dist/webstore-render-worker.js"]
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: "false"
+      MYSQL_WAIT_HOST: mysql
+      MYSQL_WAIT_USER: mergetasks
+      MYSQL_WAIT_PASSWORD: mergetasks_pass
+      DATABASE_URL: mysql://mergetasks:mergetasks_pass@mysql:3306/mergetasks?ssl=false
+      DB_SSL: "false"
+      REDIS_URL: redis://redis:6379
+      APP_BASE_URL: http://localhost:3080
+      SESSION_SECRET: docker-compose-dev-session-secret-min-32-chars
+      CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      OPENAI_API_KEY: docker-placeholder-openai-not-used-until-copilot
+      RESEND_API_KEY: re_docker_placeholder_replace_for_email
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+
+volumes:
+  mergetasks_mysql_data:

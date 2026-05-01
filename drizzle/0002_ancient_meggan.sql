@@ -1,0 +1,21 @@
+CREATE TABLE `virtualProofs` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`productId` int,
+	`proposalId` int,
+	`clientId` int,
+	`productName` varchar(255) NOT NULL,
+	`productImageUrl` text,
+	`logoUrl` text,
+	`logoName` varchar(255),
+	`decorationMethod` enum('embroidery','screen_print','laser_engraving','heat_transfer','dtg','sublimation','deboss','patch') NOT NULL DEFAULT 'screen_print',
+	`decorationZone` varchar(64) DEFAULT 'front',
+	`placementData` text,
+	`proofImageUrl` text,
+	`proofStatus` enum('draft','rendering','ready','approved','revision_requested') NOT NULL DEFAULT 'draft',
+	`revisionNotes` text,
+	`approvedAt` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `virtualProofs_id` PRIMARY KEY(`id`)
+);

@@ -1,0 +1,42 @@
+# Presidio NLP — PII detection sidecar (Layer 2)
+# Run alongside the main app: docker compose -f docker-compose.presidio.yml up -d
+#
+# Required .env:
+#   PRESIDIO_ANALYZER_URL=http://localhost:5001
+#   PRESIDIO_ANONYMIZER_URL=http://localhost:5002
+#   PRESIDIO_ENABLED=true
+
+version: "3.8"
+
+services:
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    container_name: mt-presidio-analyzer
+    ports:
+      - "5001:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:latest
+    container_name: mt-presidio-anonymizer
+    ports:
+      - "5002:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
