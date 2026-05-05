@@ -13,6 +13,7 @@
     "test": "vitest run",
     "db:push": "bash scripts/migrate.sh",
     "db:clear": "bash scripts/clear-app-data.sh --yes",
+    "check:api-quotas": "tsx scripts/check-api-key-quotas.ts",
     "db:generate": "drizzle-kit generate",
     "seed": "tsx scripts/seed.ts",
     "e2e": "playwright test",

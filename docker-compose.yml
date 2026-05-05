@@ -2,7 +2,7 @@
 #
 # Usage:
 #   docker compose up --build
-#   Open http://localhost:3080  (host 3080 → app 3000; avoids clashing with a local dev server on :3000)
+#   Open http://localhost:4000  (host 4000 → app 3000)
 #
 # Compose reads `.env` in this directory for ${VAR} substitution. Put GOOGLE_CLIENT_ID,
 # GOOGLE_CLIENT_SECRET, etc. there so app/worker receive them. Override others with
@@ -43,7 +43,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3080:3000"
+      - "4000:3000"
     healthcheck:
       test:
         [
@@ -67,12 +67,20 @@ services:
       DATABASE_URL: mysql://mergetasks:mergetasks_pass@mysql:3306/mergetasks?ssl=false
       DB_SSL: "false"
       REDIS_URL: redis://redis:6379
-      APP_BASE_URL: http://localhost:3080
-      ALLOWED_ORIGINS: http://localhost:3080
+      APP_BASE_URL: http://localhost:4000
+      ALLOWED_ORIGINS: http://localhost:4000
       VITE_APP_ID: mergetasks
       SESSION_SECRET: docker-compose-dev-session-secret-min-32-chars
       CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
-      OPENAI_API_KEY: docker-placeholder-openai-not-used-until-copilot
+      # AI providers (copilot uses Anthropic first, then falls back to Gemini)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Legacy/default provider support
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-docker-placeholder-openai-not-used-until-copilot}
+      # Stripe (optional; required for Stripe Connect onboarding + payments)
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PLATFORM_FEE_PERCENT: ${PLATFORM_FEE_PERCENT:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-onboarding@resend.dev}
       # Pulled from the host `.env` next to this compose file (Compose variable substitution).
@@ -101,10 +109,15 @@ services:
       DATABASE_URL: mysql://mergetasks:mergetasks_pass@mysql:3306/mergetasks?ssl=false
       DB_SSL: "false"
       REDIS_URL: redis://redis:6379
-      APP_BASE_URL: http://localhost:3080
+      APP_BASE_URL: http://localhost:4000
       SESSION_SECRET: docker-compose-dev-session-secret-min-32-chars
       CREDENTIAL_ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
-      OPENAI_API_KEY: docker-placeholder-openai-not-used-until-copilot
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-docker-placeholder-openai-not-used-until-copilot}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PLATFORM_FEE_PERCENT: ${PLATFORM_FEE_PERCENT:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-onboarding@resend.dev}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
