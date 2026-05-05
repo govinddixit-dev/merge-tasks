@@ -122,15 +122,8 @@ tmp-*.png
 *.sqlite
 *.sqlite3
 
-.env
+.envy
 .env.backup*
 test-results/
-.cursor/
-.python-version
-.env.test
-pycache/
-.venv-docx/
-.venv-docx-bin/
-.venv-docx-bin/
-.render.md
-.render.mdd
+.pycache/
+._.venv/

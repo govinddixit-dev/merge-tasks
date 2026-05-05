@@ -22,6 +22,15 @@ export const supplierSyncRouter = router({
       productIds: z.array(z.number().int().positive()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // PSRESTful sync disabled 2026-05-04 — flip to false to re-enable after keys restored by PSRESTful support
+      const SUPPLIER_SYNC_DISABLED = true as boolean;
+      if (SUPPLIER_SYNC_DISABLED) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Supplier sync is temporarily disabled while we restore PSRESTful API access. Try again later.",
+        });
+      }
+
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const scope = getOrgScope(ctx);

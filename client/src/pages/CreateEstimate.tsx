@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { GroupedProductAutocomplete } from "@/components/products/GroupedProductAutocomplete";
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 // CAD-locale currency per spec. Never concat a dollar sign manually.
@@ -197,78 +198,6 @@ function ClientPicker({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// PRODUCT AUTOCOMPLETE — inline per-row search. Picking a product fills
-// description + unitPrice (three-state line item: A linked-with-defaults).
-// Subsequent edits stay on the row (state B). Unlinking clears productId
-// but keeps the edited description/price (state C).
-// ────────────────────────────────────────────────────────────────────────────
-function ProductAutocomplete({
-  catalog,
-  onPick,
-  disabled,
-}: {
-  catalog: CatalogProduct[];
-  onPick: (p: CatalogProduct) => void;
-  disabled?: boolean;
-}) {
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const matches = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return catalog.slice(0, 8);
-    return catalog.filter((p) =>
-      p.name.toLowerCase().includes(needle)
-      || (p.sku ?? "").toLowerCase().includes(needle),
-    ).slice(0, 8);
-  }, [q, catalog]);
-
-  return (
-    <div className="relative">
-      <Input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Link a product…"
-        disabled={disabled}
-        aria-label="Link line item to a catalog product"
-        className="h-8 text-sm"
-      />
-      {open && matches.length > 0 ? (
-        <div className="absolute z-20 mt-1 w-72 rounded-md border border-mt-border bg-white shadow-lg">
-          <ul className="max-h-64 overflow-auto py-1">
-            {matches.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onPick(p);
-                    setOpen(false);
-                    setQ("");
-                  }}
-                  className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left hover:bg-mt-surface-2"
-                >
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium text-mt-ink">{p.name}</span>
-                    {p.sku ? <span className="truncate text-xs text-mt-ink-3">SKU {p.sku}</span> : null}
-                  </span>
-                  {p.basePrice != null ? (
-                    <span className="text-xs tabular-nums text-mt-ink-3">
-                      {fmtCAD(parseFloat(p.basePrice))}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // LINE ITEM ROW
 // ────────────────────────────────────────────────────────────────────────────
 type LineItemRowProps = {
@@ -352,13 +281,17 @@ function LineItemRow({
             </button>
           </div>
         ) : (
-          <ProductAutocomplete
-            catalog={catalog}
+          <GroupedProductAutocomplete
+            placeholder="Link a product…"
+            panelWidth={360}
+            inputClassName="w-full h-9 px-3 rounded-md border border-mt-border text-[13px] text-mt-ink outline-none transition-all duration-150 focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-[#C4C4C4]"
             onPick={(p) => {
               setValue(`lineItems.${fieldIndex}.productId`, p.id, { shouldDirty: true });
               setValue(`lineItems.${fieldIndex}.productSku`, p.sku, { shouldDirty: true });
-              // Only auto-fill empty fields — respect existing user input.
-              if (!li?.description) setValue(`lineItems.${fieldIndex}.description`, p.name, { shouldDirty: true });
+              if (!li?.description) {
+                const label = p.colorName ? `${p.name} · ${p.colorName}` : p.name;
+                setValue(`lineItems.${fieldIndex}.description`, label, { shouldDirty: true });
+              }
               if (!li?.unitPrice && p.basePrice != null) {
                 setValue(`lineItems.${fieldIndex}.unitPrice`, parseFloat(p.basePrice), { shouldDirty: true });
               }

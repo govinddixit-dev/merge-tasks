@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { VariantProductCard } from "@/components/products/VariantProductCard";
 import {
   Search, Bot, Plus, Filter, Check, Sparkles,
   FolderOpen, Upload, Printer, Package, ChevronRight, FileText,
@@ -33,10 +34,17 @@ const initialMessages: ChatMessage[] = [
 ];
 
 export default function Curation() {
-  //  tRPC hooks for real data 
+  //  tRPC hooks for real data
   const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
   const { data: _dbProductsRaw, isLoading: productsLoading } = trpc.products.list.useQuery();
   const dbProducts = _dbProductsRaw?.items ?? [];
+  // Phase 8 — variant-grouped feed for the promo card grid. Bumped to 200
+  // so the in-memory search/filter stays snappy without paginating round
+  // trips. The flat list above is still consumed by the print branch and
+  // by the legacy in-memory promoFiltered pipeline.
+  const { data: _dbGroupedRaw } = trpc.products.listGrouped.useQuery({ limit: 200 });
+  const dbGroups = _dbGroupedRaw?.items ?? [];
   const { data: dbApiConnections = [] } = trpc.apiConnections.list.useQuery();
   const { data: dbCollections = [] } = trpc.collections.list.useQuery();
 
@@ -302,6 +310,23 @@ export default function Curation() {
   const promoFiltered = filteredProducts.filter(p => p.type === "promo");
   const printFiltered = filteredProducts.filter(p => p.type === "print");
 
+  // Phase 8 — filtered grouped view for the promo grid. Mirrors the
+  // search/category pipeline above but operates on group primaries.
+  const groupedPromoFiltered = useMemo(() => dbGroups
+    .filter(g => g.primary.type === "promotional")
+    .filter(g => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = !q ||
+        g.primary.name.toLowerCase().includes(q) ||
+        (g.primary.sku ?? "").toLowerCase().includes(q) ||
+        (g.primary.supplier ?? "").toLowerCase().includes(q);
+      const cat = (g.primary.category || "other").charAt(0).toUpperCase() + (g.primary.category || "other").slice(1);
+      const matchesCategory = selectedCategory === "All" || cat === selectedCategory;
+      const matchesScope = searchScope === "all" || searchScope === "promo";
+      return matchesSearch && matchesCategory && matchesScope;
+    }),
+    [dbGroups, searchQuery, selectedCategory, searchScope]);
+
   // Step 15: Replace keyword-matching mock with real copilot dispatch.
   // The sendChat function now delegates to the GlobalAIAssistant via
   // a custom event. If the copilot is not available, it falls back to
@@ -440,7 +465,8 @@ export default function Curation() {
       <div className="flex items-center justify-between mb-5">
         <div className="flex gap-1 bg-mt-surface-2 p-1 rounded-lg">
           {([
-            { id: "products" as CurationTab, label: "Promotional Items", icon: Package, count: allPromo.length },
+            // Phase 8 — show grouped count (unique products), not row count.
+            { id: "products" as CurationTab, label: "Promotional Items", icon: Package, count: groupedPromoFiltered.length },
             { id: "collections" as CurationTab, label: "Collections", icon: FolderOpen, count: dbCollections.length },
             { id: "print" as CurationTab, label: "Print Items", icon: Printer, count: allPrint.length },
           ]).map((tab) => {
@@ -501,10 +527,47 @@ export default function Curation() {
         </div>
       )}
 
-      {/* TAB: Promo Products */}
+      {/* TAB: Promo Products — Phase 8 grouped grid in "grid" mode, legacy
+          flat table in "list" mode for power-users editing individual SKUs. */}
       {activeTab === "products" && (
         productsLoading ? (
           <CardGridSkeleton count={6} columns={4} />
+        ) : viewMode === "grid" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+            {groupedPromoFiltered.map(g => (
+              <VariantProductCard
+                key={g.styleGroup}
+                styleGroup={g.styleGroup}
+                primary={{
+                  name: g.primary.name,
+                  sku: g.primary.sku,
+                  imageUrl: g.primary.imageUrl,
+                  category: g.primary.category,
+                  basePrice: g.primary.basePrice,
+                }}
+                variants={g.variants}
+                variantCount={g.variantCount}
+                onSelect={() => setLocation(`/curation/product/${g.primary.id}`)}
+                cta={
+                  <button
+                    onClick={() => handleAddProduct(g.styleGroup, g.primary.name)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors ${
+                      addedProducts.has(g.styleGroup)
+                        ? "bg-mt-surface-2 text-mt-ink-3"
+                        : "bg-primary text-white hover:bg-[#4F3BC7]"
+                    }`}
+                  >
+                    {addedProducts.has(g.styleGroup) ? "Added" : "+ Add"}
+                  </button>
+                }
+              />
+            ))}
+            {groupedPromoFiltered.length === 0 && (
+              <div className="col-span-full py-16 text-center text-[13px] text-mt-ink-4">
+                No products match your filters.
+              </div>
+            )}
+          </div>
         ) : (
           <CurationProductsTab
             promoFiltered={promoFiltered}

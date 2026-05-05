@@ -12,12 +12,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Search, X, Plus, GripVertical, ChevronDown, ChevronRight,
-  Sparkles, Pencil, Check, Tag, Package, Loader2, Trash2,
+  Sparkles, Pencil, Check, Tag, Package, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWebstore } from "./WebstoreContext";
-import type { CatalogBlock, CatalogSubCategory } from "./WebstoreContext";
+import type { CatalogBlock } from "./WebstoreContext";
+import { colorNameToHex } from "@/lib/colorMap";
 
 //  Types 
 
@@ -145,17 +146,27 @@ export default function Step6Catalog({ dbProducts, toggleProduct }: Props) {
     [activeProducts, addedProductIds]
   );
 
-  const searchResults = useMemo(() => {
+  // Phase 8 — variant-grouped feed for the dropdown. Picking a card adds
+  // ALL its variant productIds to the store; picking a swatch adds just
+  // that color. dbProducts (flat) is still used for the addedProducts
+  // mini-grid below since it's already keyed by individual productId.
+  const { data: groupedRaw } = trpc.products.listGrouped.useQuery(
+    { limit: 200 },
+    { staleTime: 60_000 },
+  );
+  const groupedProducts = groupedRaw?.items ?? [];
+
+  const groupedSearchResults = useMemo(() => {
     if (search.trim().length < 1) return [];
     const q = search.toLowerCase();
-    return activeProducts
-      .filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        (p.sku && p.sku.toLowerCase().includes(q)) ||
-        (p.supplier && p.supplier.toLowerCase().includes(q))
+    return groupedProducts
+      .filter(g =>
+        g.primary.name.toLowerCase().includes(q) ||
+        (g.primary.sku && g.primary.sku.toLowerCase().includes(q)) ||
+        (g.primary.supplier && g.primary.supplier.toLowerCase().includes(q))
       )
       .slice(0, 10);
-  }, [activeProducts, search]);
+  }, [groupedProducts, search]);
 
   // Tile drag
   const onDragStart = (idx: number) => { dragIdx.current = idx; };
@@ -199,10 +210,20 @@ export default function Step6Catalog({ dbProducts, toggleProduct }: Props) {
     set("catalogBlocks", catalogBlocks.filter(b => b.id !== id));
   };
 
-  // Product search add
-  const handleAddProduct = (product: DbProduct) => {
-    if (!addedProductIds.includes(product.id)) {
-      dispatch({ type: "TOGGLE_PRODUCT", productId: product.id });
+  // Phase 8 — adding a styleGroup adds ALL its variant productIds. Only
+  // pushes ids that aren't already in the set (avoids accidental toggle-off).
+  const handleAddGroup = (variantIds: number[]) => {
+    const next = new Set(addedProductIds);
+    variantIds.forEach(id => next.add(id));
+    set("addedProductIds", Array.from(next));
+    setSearch("");
+    setShowDropdown(false);
+  };
+
+  // Single-variant pick from the swatch row.
+  const handleAddVariant = (variantId: number) => {
+    if (!addedProductIds.includes(variantId)) {
+      dispatch({ type: "TOGGLE_PRODUCT", productId: variantId });
     }
     setSearch("");
     setShowDropdown(false);
@@ -550,44 +571,92 @@ export default function Step6Catalog({ dbProducts, toggleProduct }: Props) {
             )}
           </div>
 
-          {/* Dropdown */}
+          {/* Dropdown — variant-grouped tile list */}
           {showDropdown && search.trim().length >= 1 && (
             <div
               ref={dropdownRef}
-              className="absolute top-full left-0 right-0 mt-1 bg-white border border-mt-border rounded-2xl shadow-md z-50 max-h-64 overflow-y-auto"
+              className="absolute top-full left-0 right-0 mt-1 bg-white border border-mt-border rounded-2xl shadow-md z-50 max-h-80 overflow-y-auto"
             >
-              {searchResults.length > 0 ? searchResults.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => handleAddProduct(p)}
-                  disabled={addedProductIds.includes(p.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-mt-brand-light transition-colors text-left first:rounded-t-2xl last:rounded-b-2xl ${
-                    addedProductIds.includes(p.id) ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  <div className="w-9 h-9 rounded-lg bg-mt-surface-2 flex-shrink-0 overflow-hidden">
-                    {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Package size={14} className="text-[#D4D4D4]" />
+              {groupedSearchResults.length > 0 ? groupedSearchResults.map(g => {
+                const variantIds = g.variants.map(v => v.productId);
+                const allAdded = variantIds.every(id => addedProductIds.includes(id));
+                return (
+                  <div
+                    key={g.styleGroup}
+                    className="border-b border-mt-border last:border-b-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleAddGroup(variantIds)}
+                      disabled={allAdded}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-mt-brand-light transition-colors duration-150 text-left first:rounded-t-2xl ${
+                        allAdded ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-md border border-mt-border bg-mt-surface-2 flex-shrink-0 overflow-hidden">
+                        {g.primary.imageUrl ? (
+                          <img src={g.primary.imageUrl} alt={g.primary.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package size={14} className="text-mt-ink-4" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-mt-ink truncate">{g.primary.name}</p>
+                        <p className="text-[11px] text-mt-ink-4">
+                          {g.primary.sku && <span className="mr-2 font-mono">{g.primary.sku}</span>}
+                          {g.variantCount > 1 && <span>{g.variantCount} colors · </span>}
+                          {g.primary.basePrice && <span className="text-primary font-semibold">${parseFloat(g.primary.basePrice).toFixed(2)}</span>}
+                        </p>
+                      </div>
+                      {allAdded ? (
+                        <span className="text-[11px] text-[#16A34A] font-semibold flex-shrink-0">All added</span>
+                      ) : (
+                        <span className="text-[11px] text-primary font-semibold flex-shrink-0 inline-flex items-center gap-1">
+                          <Plus size={13} /> Add all
+                        </span>
+                      )}
+                    </button>
+                    {g.variantCount > 1 && (
+                      <div className="px-4 pb-2.5 pl-[3.75rem] flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase tracking-wider text-mt-ink-4 font-semibold mr-1">
+                          Or pick one
+                        </span>
+                        {g.variants.map(v => {
+                          const hex = v.colorHex ?? colorNameToHex(v.colorName);
+                          const added = addedProductIds.includes(v.productId);
+                          return (
+                            <button
+                              key={v.productId}
+                              type="button"
+                              title={`${v.colorName ?? "Variant"}${added ? " (added)" : ""}`}
+                              aria-label={v.colorName ?? "Variant"}
+                              onClick={() => handleAddVariant(v.productId)}
+                              style={
+                                hex
+                                  ? { backgroundColor: hex }
+                                  : v.swatchUrl
+                                  ? {
+                                      backgroundImage: `url(${v.swatchUrl})`,
+                                      backgroundSize: "cover",
+                                      backgroundPosition: "center",
+                                    }
+                                  : { backgroundColor: "#D4D4D4" }
+                              }
+                              className={`h-4 w-4 rounded-full transition-all duration-150 ${
+                                added
+                                  ? "ring-2 ring-[#16A34A]"
+                                  : "ring-1 ring-mt-border hover:ring-2 hover:ring-primary"
+                              }`}
+                            />
+                          );
+                        })}
                       </div>
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-semibold text-mt-ink truncate">{p.name}</p>
-                    <p className="text-[10px] text-mt-ink-4">
-                      {p.sku && <span className="mr-2">{p.sku}</span>}
-                      {p.basePrice && <span className="text-primary font-medium">${parseFloat(p.basePrice).toFixed(2)}</span>}
-                    </p>
-                  </div>
-                  {addedProductIds.includes(p.id) ? (
-                    <span className="text-[10px] text-[#16A34A] font-semibold flex-shrink-0">Added</span>
-                  ) : (
-                    <Plus size={14} className="text-primary flex-shrink-0" />
-                  )}
-                </button>
-              )) : (
+                );
+              }) : (
                 <div className="px-4 py-3 text-[12px] text-mt-ink-4">
                   No products found for "{search}"
                 </div>

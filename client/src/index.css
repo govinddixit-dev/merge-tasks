@@ -59,6 +59,26 @@
   --color-mt-warning-bg:   var(--mt-warning-bg);
   --color-mt-danger:       var(--mt-danger);
   --color-mt-danger-bg:    var(--mt-danger-bg);
+
+  /* ── Webstore wireframe tokens (Phase 2) ──────────────────────────────
+   * Per /home/ubuntu/wireframes/handoff/01_DESIGN_SYSTEM.md.
+   * Scoped to the public storefront via util classes (bg-paper, text-ink,
+   * border-rule, etc.). Do not touch admin / shadcn tokens above.
+   * `--color-brand` resolves to per-store accent (set by BrandRoot at
+   * runtime via `--brand-accent`); fallback is the wireframe default. */
+  --color-ink:        #111111;
+  --color-ink-soft:   #1a1a1a;
+  --color-graphite:   #2a2a2a;
+  --color-paper:      #fafaf7;
+  --color-paper-soft: #f5f3ee;
+  --color-paper-warm: #efece4;
+  --color-rule:       #e6e3da;
+  --color-rule-soft:  #d8d4c8;
+  --color-ws-muted:       #7a766c;
+  --color-ws-muted-soft:  #9c988e;
+  --color-brand:      var(--brand-accent, #c84e2a);
+
+  --font-serif-display: 'Cormorant Garamond', Georgia, serif;
 }
 
 /* 

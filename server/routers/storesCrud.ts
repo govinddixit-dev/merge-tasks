@@ -32,7 +32,58 @@ import { checkStoreLimit } from "../utils/planLimits";
 import { rateLimited } from "../utils/rateLimitMiddleware";
 import { STORE_CREATE_LIMIT, PUBLIC_STORE_READ_LIMIT } from "../utils/rateLimiter";
 import { ensureProcessedLogoInBackground } from "../services/logo-background-removal";
-import { flagPendingForStoreLogoChange } from "../services/webstore-render-orchestrator";
+import { flagPendingForStoreLogoChange, gateRenderUrlForWebstore } from "../services/webstore-render-orchestrator";
+
+/**
+ * Phase 8 — group flat product+storeProducts join into per-styleGroup
+ * buckets. Pulled out as a free function so the closure type-inference
+ * doesn't choke on the inline IIFE form.
+ */
+type ProductRow = typeof products.$inferSelect;
+type StoreProductRow = typeof storeProducts.$inferSelect;
+
+function groupProductDetailsByStyleGroup(
+  productDetails: ProductRow[],
+  spRows: StoreProductRow[],
+) {
+  const buckets = new Map<string, ProductRow[]>();
+  for (const p of productDetails) {
+    const key = p.styleGroup ?? `__solo_${p.id}`;
+    const list = buckets.get(key) ?? [];
+    list.push(p);
+    buckets.set(key, list);
+  }
+  return Array.from(buckets.entries()).map(([styleGroup, variants]) => {
+    const primary = variants.find(v => v.isVariantPrimary) ?? variants[0];
+    const primarySp = spRows.find(sp => sp.productId === primary.id) ?? null;
+    return {
+      styleGroup,
+      primary,
+      primaryStoreProductId: primarySp?.id ?? null,
+      variants: variants
+        .map((v: ProductRow) => {
+          const sp = spRows.find(sp => sp.productId === v.id);
+          return {
+            productId: v.id,
+            storeProductId: sp?.id ?? null,
+            colorName: v.colorName,
+            colorHex: v.colorHex,
+            swatchUrl: v.swatchUrl,
+            imageUrl: v.imageUrl,
+            webstoreRenderedImageUrl: sp
+              ? gateRenderUrlForWebstore({
+                  renderApproved: sp.renderApproved,
+                  renderOverrideUrl: sp.renderOverrideUrl,
+                  webstoreRenderedImageUrl: sp.webstoreRenderedImageUrl,
+                })
+              : null,
+          };
+        })
+        .sort((a, b) => (a.colorName ?? "").localeCompare(b.colorName ?? "")),
+      variantCount: variants.length,
+    };
+  });
+}
 
 const log = getLogger("stores:crud");
 
@@ -188,13 +239,128 @@ export const storesCrudRouter = router({
             ...p,
             customPrice: sp?.customPrice ?? p.basePrice,
             featured: sp?.featured ?? false,
+            sortOrder: sp?.sortOrder ?? 0,
+            trackInventory: sp?.trackInventory ?? false,
+            stockQuantity: sp?.stockQuantity ?? null,
             webstoreRenderStatus: rawStatus,
             effectiveRenderStatus,
             webstoreRenderedAt: sp?.webstoreRenderedAt ?? null,
+            webstoreRenderedImageUrl: sp?.webstoreRenderedImageUrl ?? null,
+            renderApproved: sp?.renderApproved ?? false,
+            renderOverrideUrl: sp?.renderOverrideUrl ?? null,
           };
         }),
         clientId: store.clientId,
         client: clientRows[0] ? { ...clientRows[0], logoUrl: clientLogoUrl } : null,
+      };
+    }),
+
+  /**
+   * Phase 8 — per-store, per-styleGroup detail feed.
+   *
+   * Resolves one product family in the context of one store. Returns the
+   * primary variant, all sibling variants, AND the storeProducts row for
+   * each variant in this store (customPrice, featured, sortOrder, render
+   * fields, inventory). Used by the Store Product Detail page to render
+   * the focused per-product management view.
+   */
+  getStoreProductGroup: protectedProcedure
+    .input(z.object({
+      storeId: z.number().int().positive(),
+      styleGroup: z.string().min(1).max(128),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+
+      // 1. Confirm the operator owns the store.
+      const storeRows = await db
+        .select()
+        .from(stores)
+        .where(and(eq(stores.id, input.storeId), scope.stores))
+        .limit(1);
+      if (storeRows.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
+      }
+      const store = storeRows[0];
+
+      // 2. Fetch every catalog product in this styleGroup, scoped to the
+      //    operator's org. The styleGroup is unique per org by construction.
+      const variantProducts = await db
+        .select()
+        .from(products)
+        .where(and(eq(products.styleGroup, input.styleGroup), scope.products));
+      if (variantProducts.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Product group not found" });
+      }
+      const primary = variantProducts.find(v => v.isVariantPrimary) ?? variantProducts[0];
+
+      // 3. Fetch the storeProducts rows that bind these variants to this
+      //    store. Variants without a row are NOT bound — we still surface
+      //    them so the detail page can offer to add them.
+      const variantIds = variantProducts.map(v => v.id);
+      const spRows = variantIds.length > 0
+        ? await db.select().from(storeProducts).where(
+            and(
+              eq(storeProducts.storeId, input.storeId),
+              inArray(storeProducts.productId, variantIds),
+            ),
+          )
+        : [];
+
+      const variants = variantProducts
+        .map(v => {
+          const sp = spRows.find(s => s.productId === v.id);
+          return {
+            productId: v.id,
+            storeProductId: sp?.id ?? null,
+            sku: v.sku,
+            colorName: v.colorName,
+            colorHex: v.colorHex,
+            swatchUrl: v.swatchUrl,
+            imageUrl: v.imageUrl,
+            basePrice: v.basePrice,
+            sizes: v.sizes,
+            isPrimary: v.isVariantPrimary === true,
+            // Per-binding fields (null when variant isn't yet in this store).
+            customPrice: sp?.customPrice ?? null,
+            featured: sp?.featured ?? false,
+            sortOrder: sp?.sortOrder ?? 0,
+            trackInventory: sp?.trackInventory ?? false,
+            stockQuantity: sp?.stockQuantity ?? null,
+            divisionIds: (sp?.divisionIds as number[] | null | undefined) ?? null,
+            // Render fields.
+            webstoreRenderedImageUrl: sp?.webstoreRenderedImageUrl ?? null,
+            webstoreRenderStatus: sp?.webstoreRenderStatus ?? null,
+            webstoreRenderedAt: sp?.webstoreRenderedAt ?? null,
+            renderApproved: sp?.renderApproved ?? false,
+            renderApprovedAt: sp?.renderApprovedAt ?? null,
+            renderOverrideUrl: sp?.renderOverrideUrl ?? null,
+            renderPromptAdjustment: sp?.renderPromptAdjustment ?? null,
+            renderPlacementX: sp?.renderPlacementX ?? null,
+            renderPlacementY: sp?.renderPlacementY ?? null,
+            renderPlacementWidth: sp?.renderPlacementWidth ?? null,
+            renderPlacementHeight: sp?.renderPlacementHeight ?? null,
+            renderPlacementRotation: sp?.renderPlacementRotation ?? null,
+            // Derived: same logic the Products tab uses.
+            effectiveRenderStatus:
+              sp?.webstoreRenderStatus === "pending" &&
+              v.webstoreImprintPlacementAnalyzedAt == null
+                ? ("awaiting_analysis" as const)
+                : sp?.webstoreRenderStatus ?? null,
+          };
+        })
+        .sort((a, b) => (a.colorName ?? "").localeCompare(b.colorName ?? ""));
+
+      return {
+        styleGroup: input.styleGroup,
+        primary,
+        variantCount: variantProducts.length,
+        variants,
+        storeName: store.name,
+        storeLogoUrl: store.logoUrl,
+        storeSlug: store.slug,
       };
     }),
 
@@ -402,6 +568,17 @@ export const storesCrudRouter = router({
           website: clientRows[0].website,
           logoUrl: clientLogoUrl,
         } : null,
+        // Phase 8 — variant-grouped projection added alongside the flat
+        // products list. The storefront renders from `productGroups`
+        // (one card per styleGroup with a color swatch strip); legacy
+        // consumers (proposal-detail, mocks, anything iterating raw rows)
+        // continue to read `products`. The two projections are derived
+        // from the same join so they stay consistent.
+        // Phase 8 — productGroups projection added alongside flat products.
+        // The storefront renders one card per styleGroup with a swatch
+        // strip; legacy consumers continue to read `products`. Both come
+        // from the same productDetails+spRows join so they stay aligned.
+        productGroups: groupProductDetailsByStyleGroup(productDetails, spRows),
         products: productDetails.map(p => {
           const sp = spRows.find(sp => sp.productId === p.id);
           return {
@@ -448,15 +625,25 @@ export const storesCrudRouter = router({
             webstoreImprintPlacementWidth:     p.webstoreImprintPlacementWidth,
             webstoreImprintPlacementHeight:    p.webstoreImprintPlacementHeight,
             webstoreImprintPlacementBlendMode: p.webstoreImprintPlacementBlendMode,
-            // Step 6 — photorealistic nano-banana rendered image. Read by
-            // WebstoreLogoOverlay; non-null swaps the CSS composite for
-            // the rendered image with onLoad fade-in and onError fallback.
+            // Phase 7 hybrid approval gate — customers see a photorealistic
+            // image only when the distributor has approved this binding.
+            // Override beats AI render when both exist (manual upload from
+            // a supplier photo supersedes the model output). Unapproved or
+            // missing → null, and WebstoreLogoOverlay falls back to the CSS
+            // logo composite. The customer never sees status, "pending
+            // review", or unapproved AI output — the gate is invisible to
+            // shoppers by design.
+            //
             // Sourced from storeProducts (post-0099, per-binding) so two
             // stores sharing the same product can each have their own
-            // tenant-specific render. Falls back to null when no binding
-            // row exists for the product (which shouldn't happen since
-            // spRows drives productIds, but defensive).
-            webstoreRenderedImageUrl:          sp?.webstoreRenderedImageUrl ?? null,
+            // tenant-specific render and approval state.
+            webstoreRenderedImageUrl: sp
+              ? gateRenderUrlForWebstore({
+                  renderApproved: sp.renderApproved,
+                  renderOverrideUrl: sp.renderOverrideUrl,
+                  webstoreRenderedImageUrl: sp.webstoreRenderedImageUrl,
+                })
+              : null,
           };
         }),
       };
@@ -957,5 +1144,64 @@ export const storesCrudRouter = router({
         orders: Number(orderCount?.count ?? 0),
         users: Number(userCount?.count ?? 0),
       };
+    }),
+
+  /**
+   * Monthly KPI time series for a single store, used by OverviewTab sparklines.
+   * Excludes cancelled / refunded / payment_failed orders so trends reflect net GMV.
+   * Returns N months of buckets, padded with zeros so missing months keep the
+   * sparkline length stable.
+   */
+  kpiTimeSeries: protectedProcedure
+    .input(z.object({
+      storeId: z.number().int().positive(),
+      months: z.number().int().min(1).max(24).default(6),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+
+      const [store] = await db
+        .select({ id: stores.id })
+        .from(stores)
+        .where(and(eq(stores.id, input.storeId), scope.stores))
+        .limit(1);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
+
+      // Compute window start: first day of (current month − months + 1).
+      const now = new Date();
+      const windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - input.months + 1, 1));
+
+      const rows = await db
+        .select({
+          ym: sql<string>`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`,
+          gmv: sql<string>`COALESCE(SUM(${orders.total}), 0)`,
+          orderCount: sql<number>`COUNT(*)`,
+        })
+        .from(orders)
+        .where(and(
+          eq(orders.storeId, input.storeId),
+          scope.orders,
+          sql`${orders.status} NOT IN ('cancelled','refunded','payment_failed')`,
+          sql`${orders.createdAt} >= ${windowStart}`,
+        ))
+        .groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`);
+
+      const byMonth = new Map(rows.map(r => [r.ym, r]));
+
+      const series: Array<{ ym: string; gmvCents: number; orderCount: number }> = [];
+      for (let i = 0; i < input.months; i++) {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - input.months + 1 + i, 1));
+        const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+        const row = byMonth.get(ym);
+        series.push({
+          ym,
+          gmvCents: row ? Math.round(parseFloat(row.gmv) * 100) : 0,
+          orderCount: row ? Number(row.orderCount) : 0,
+        });
+      }
+
+      return { months: series };
     }),
 });

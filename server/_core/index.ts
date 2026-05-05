@@ -1,4 +1,4 @@
-import "../envBootstrap";
+import "dotenv/config";
 import { validateEnv } from "../utils/validateEnv";
 // Validate environment variables before any other initialization
 validateEnv();
@@ -240,6 +240,13 @@ async function startServer() {
   app.get("/ready", readyHandler);
   app.get("/health", readyHandler);
 
+  // Health monitor — separate from the legacy /health/ready handlers
+  // above. Provides /api/health (unauth liveness) and
+  // /api/health/details (token-gated metrics snapshot from the
+  // 15-minute in-process collector). See server/services/health-monitor.ts.
+  const { registerHealthRoutes } = await import("../services/health-endpoints");
+  registerHealthRoutes(app);
+
   // Public API routes (no auth required)
   app.use(publicProposalRouter);
   app.use(publicInvoiceRouter);
@@ -331,9 +338,16 @@ async function startServer() {
   const { scheduleAgentCron } = await import("../jobs/agentCron");
   scheduleAgentCron();
 
+  //  Health monitor — 15-min metrics collection into logs/health-metrics.jsonl.
+  //  Wire-and-forget; the monitor never throws and uses .unref() so it never
+  //  blocks process shutdown.
+  const { startHealthMonitor } = await import("../services/health-monitor");
+  startHealthMonitor("main");
+
   //  Supplier Sync Cron — pulls PSRESTful pricing + zones every 24h
-  const { scheduleSupplierSyncCron } = await import("../jobs/supplierSyncCron");
-  scheduleSupplierSyncCron();
+  // PSRESTful sync disabled 2026-05-04 — re-enable after keys restored by PSRESTful support
+  // const { scheduleSupplierSyncCron } = await import("../jobs/supplierSyncCron");
+  // scheduleSupplierSyncCron();
 
   //  Graceful Shutdown 
   // On SIGTERM/SIGINT, stop accepting new connections, drain existing ones, then exit.

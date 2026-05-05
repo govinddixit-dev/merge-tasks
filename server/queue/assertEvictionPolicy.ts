@@ -12,8 +12,9 @@
  *     boot surfaces parameter-group drift via pm2's restart counter rather
  *     than via a customer-facing render disappearing.
  *
- * NOT yet wired into a boot path. Land in a follow-up commit after the
- * ElastiCache parameter-group change is verified in production.
+ * Wired into the worker boot path at server/workers/webstore-render-
+ * worker-entry.ts:40 — a failed assertion exits with code 1 so pm2's
+ * restart counter surfaces parameter-group drift.
  */
 
 import type { Redis } from "ioredis";

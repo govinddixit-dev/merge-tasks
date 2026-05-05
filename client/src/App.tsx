@@ -25,6 +25,7 @@ import ProposalEditor from "./pages/ProposalEditor";
 import EstimateDetail from "./pages/EstimateDetail";
 import InvoiceDetail from "./pages/InvoiceDetail";
 import StoreManagement from "./pages/StoreManagement";
+import StoreProductDetailPage from "./pages/StoreManagement/StoreProductDetailPage";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PurchaseOrderDetail from "./pages/PurchaseOrderDetail";
 import PurchaseOrderPreview from "./pages/PurchaseOrderPreview";
@@ -186,6 +187,7 @@ function Router() {
             <Route path="/integrations"><Redirect to="/settings" /></Route>
             <Route path="/reports"><ProtectedRoute component={Reports} /></Route>
             <Route path="/create-webstore"><ProtectedRoute component={CreateWebstore} /></Route>
+            <Route path="/store-management/:id/product/:styleGroup"><ProtectedRoute component={StoreProductDetailPage} /></Route>
             <Route path="/store-management/:id"><ProtectedRoute component={StoreManagement} /></Route>
             <Route path="/store-preview/:id"><ProtectedRoute component={StorePreviewPage} /></Route>
             <Route path="/store-editor/:id"><ProtectedRoute component={StoreEditorPage} /></Route>

@@ -93,6 +93,144 @@ export const productsRouter = router({
       return rows[0];
     }),
 
+  /**
+   * Phase 8 — variant-grouped catalog feed.
+   *
+   * Collapses 13,871 variant rows into ~407 product groups by joining each
+   * group's primary variant (isVariantPrimary=TRUE) to its sibling variants.
+   * The primary's row supplies the card-face data (name, imageUrl, price);
+   * the variants array drives the color swatch strip.
+   *
+   * Filters mirror products.list (category, type, search, status). Search
+   * matches on the primary variant's name/sku/supplier — that's what the
+   * card shows, so a hit there is what the operator expects to find.
+   *
+   * The legacy products.list stays unchanged for bulk-edit and admin tools
+   * that need flat rows.
+   */
+  listGrouped: protectedProcedure
+    .input(
+      z.object({
+        search: z.string().optional(),
+        category: z.string().optional(),
+        type: z.enum(["promotional", "print"]).optional(),
+        status: z.enum(["active", "inactive", "draft"]).optional(),
+        limit: z.number().min(1).max(200).optional().default(50),
+        offset: z.number().min(0).optional().default(0),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+      const limit = input?.limit ?? 50;
+      const offset = input?.offset ?? 0;
+
+      // Pull all org-scoped rows once. Catalog ceiling is bounded
+      // (org-scoped, ~tens of thousands at most). Group + filter in JS
+      // for code clarity; Drizzle's lack of window-function helpers makes
+      // the SQL-side variant noisy. If this becomes a hotspot we can move
+      // to a CTE-based query later.
+      const rows = await db
+        .select()
+        .from(products)
+        .where(scope.products)
+        .orderBy(desc(products.updatedAt));
+
+      // Bucket by styleGroup; rows without a styleGroup form singletons
+      // keyed by their id (so manual products still appear).
+      const buckets = new Map<string, typeof rows>();
+      for (const r of rows) {
+        const key = r.styleGroup ?? `__solo_${r.id}`;
+        const list = buckets.get(key) ?? [];
+        list.push(r);
+        buckets.set(key, list);
+      }
+
+      type Row = typeof rows[number];
+      const groups = Array.from(buckets.entries()).map(([styleGroup, variants]) => {
+        const primary: Row = variants.find(v => v.isVariantPrimary) ?? variants[0];
+        return {
+          styleGroup,
+          primary,
+          variants: variants
+            .map(v => ({
+              productId: v.id,
+              colorName: v.colorName,
+              colorHex: v.colorHex,
+              swatchUrl: v.swatchUrl,
+              imageUrl: v.imageUrl,
+            }))
+            .sort((a, b) => (a.colorName ?? "").localeCompare(b.colorName ?? "")),
+          variantCount: variants.length,
+        };
+      });
+
+      // Filter at the group level using the primary's fields.
+      let filtered = groups;
+      if (input?.category) filtered = filtered.filter(g => g.primary.category === input.category);
+      if (input?.type)     filtered = filtered.filter(g => g.primary.type === input.type);
+      if (input?.status)   filtered = filtered.filter(g => g.primary.status === input.status);
+      if (input?.search) {
+        const s = input.search.toLowerCase();
+        filtered = filtered.filter(g =>
+          g.primary.name.toLowerCase().includes(s) ||
+          (g.primary.sku && g.primary.sku.toLowerCase().includes(s)) ||
+          (g.primary.supplier && g.primary.supplier.toLowerCase().includes(s)),
+        );
+      }
+      filtered.sort((a, b) =>
+        (b.primary.updatedAt instanceof Date ? b.primary.updatedAt.getTime() : 0) -
+        (a.primary.updatedAt instanceof Date ? a.primary.updatedAt.getTime() : 0),
+      );
+
+      const total = filtered.length;
+      const page = filtered.slice(offset, offset + limit);
+      return {
+        items: page,
+        total,
+        hasMore: offset + limit < total,
+        nextOffset: offset + limit < total ? offset + limit : null,
+      };
+    }),
+
+  /**
+   * PDP feed — given a styleGroup slug, return the primary variant plus
+   * all sibling variants (id, colorName, colorHex, swatchUrl, imageUrl,
+   * sizes). Org-scoped. Used by both the distributor and customer PDPs
+   * to render the color selector and main image swap.
+   */
+  getByStyleGroup: protectedProcedure
+    .input(z.object({ styleGroup: z.string().min(1).max(128) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+
+      const rows = await db
+        .select()
+        .from(products)
+        .where(and(eq(products.styleGroup, input.styleGroup), scope.products));
+
+      if (rows.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Product group not found" });
+      }
+      const primary = rows.find(r => r.isVariantPrimary) ?? rows[0];
+      const variants = rows
+        .map(r => ({
+          productId: r.id,
+          colorName: r.colorName,
+          colorHex: r.colorHex,
+          swatchUrl: r.swatchUrl,
+          imageUrl: r.imageUrl,
+          sizes: r.sizes,
+          basePrice: r.basePrice,
+        }))
+        .sort((a, b) => (a.colorName ?? "").localeCompare(b.colorName ?? ""));
+
+      return { styleGroup: input.styleGroup, primary, variants, variantCount: rows.length };
+    }),
+
   getByIds: protectedProcedure
     .input(z.object({ ids: z.array(z.number()) }))
     .query(async ({ ctx, input }) => {

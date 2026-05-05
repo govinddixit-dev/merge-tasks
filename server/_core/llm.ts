@@ -47,6 +47,14 @@ export type ImageContent = {
   };
 };
 
+export type ImageBase64Content = {
+  type: "image_base64";
+  image_base64: {
+    media_type: string;
+    data: string;
+  };
+};
+
 export type FileContent = {
   type: "file_url";
   file_url: {
@@ -60,7 +68,7 @@ export type FileContent = {
   };
 };
 
-export type MessageContent = string | TextContent | ImageContent | FileContent;
+export type MessageContent = string | TextContent | ImageContent | ImageBase64Content | FileContent;
 
 export type Message = {
   role: Role;
@@ -176,12 +184,13 @@ const ensureArray = (
 
 const normalizeContentPart = (
   part: MessageContent
-): TextContent | ImageContent | FileContent => {
+): TextContent | ImageContent | ImageBase64Content | FileContent => {
   if (typeof part === "string") {
     return { type: "text", text: part };
   }
   if (part.type === "text") return part;
   if (part.type === "image_url") return part;
+  if (part.type === "image_base64") return part;
   if (part.type === "file_url") return part;
   throw new Error("Unsupported message content part");
 };

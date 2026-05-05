@@ -55,7 +55,7 @@ function runDeploy(deployId: string) {
   deployRunning = true;
   const deployScript = path.resolve(process.cwd(), "deploy.sh");
   log.info(`[${deployId}] spawning deploy.sh`);
-  const child = spawn("bash", [deployScript], {
+  const child = spawn("setsid", ["--fork", "bash", deployScript], {
     cwd: process.cwd(),
     detached: true,
     stdio: "ignore",
@@ -69,8 +69,14 @@ function runDeploy(deployId: string) {
     deployRunning = false;
     log.error(`[${deployId}] failed to spawn deploy.sh:`, err);
   });
-  // unref so the Node event loop isn't held by the child — deploy.sh
-  // reloads pm2 anyway, which will replace this process.
+  // We use setsid --fork to double-fork the deploy script: the immediate
+  // child exits, and the grandchild reparents to init (PID 1) before pm2's
+  // reload phase begins. This is required because pm2 reload mergetasks
+  // signals the entire mergetasks process tree, and a single Node detach
+  // (detached: true + unref) leaves a parent-PID linkage that gets chased
+  // during reload — killing deploy.sh between step 6/7 and step 7/7,
+  // preventing the DEPLOY COMPLETE banner from emitting. With setsid
+  // --fork, deploy.sh's ppid is 1 by the time pm2 reload runs.
   child.unref();
 }
 

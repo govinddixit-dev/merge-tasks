@@ -3,7 +3,7 @@
  * artwork upload (print products), pricing tiers, and related products.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import {
   ChevronLeft, Package, Minus, Plus, ShoppingCart,
@@ -17,6 +17,8 @@ import { getStoreTheme } from "./storeThemeUtils";
 import WebstoreLogoOverlay, { extractWebstorePlacement } from "./WebstoreLogoOverlay";
 import ProductCard from "./ProductCard";
 import { trpc } from "@/lib/trpc";
+import { colorNameToHex } from "@/lib/colorMap";
+import { dedupeAndSortVariants } from "@/lib/variantUtils";
 
 export default function StoreProductDetailPage({ productId }: { productId: string }) {
   const { store, addToCart, isDark } = useStore();
@@ -30,6 +32,17 @@ export default function StoreProductDetailPage({ productId }: { productId: strin
   const product = store.products.find(p => p.id === parseInt(productId));
   const isPrint = product?.type === "print";
 
+  // Phase 8 — locate the styleGroup this product belongs to so we can
+  // render a per-color swatch selector instead of (or in addition to)
+  // the legacy comma-separated colors dropdown. Only triggers for
+  // products with siblings; ungrouped (manual) products fall through.
+  const productGroup = product
+    ? store.productGroups?.find(g =>
+        g.variants.some(v => v.productId === product.id),
+      )
+    : undefined;
+  const variantSiblings = productGroup?.variants ?? [];
+
   const [qty, setQty] = useState(product?.minOrderQty || 1);
   const [selectedColor, setSelectedColor] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
@@ -38,8 +51,50 @@ export default function StoreProductDetailPage({ productId }: { productId: strin
   const [message, setMessage] = useState("");
   const [infoTab, setInfoTab] = useState<"product" | "additional" | "pricing">("product");
   const [mainImage, setMainImage] = useState(product?.imageUrl || "");
+  const [trackedProductId, setTrackedProductId] = useState(product?.id);
   const [artworkFile, setArtworkFile] = useState<File | null>(null);
   const [artworkPreview, setArtworkPreview] = useState<string | null>(null);
+  const [swatchExpanded, setSwatchExpanded] = useState(false);
+  const [magnifier, setMagnifier] = useState<{ x: number; y: number } | null>(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  // Detect touch devices once on mount. The magnifier requires a hover
+  // cursor to be useful — on touch devices we skip it entirely.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsTouchDevice(
+      "ontouchstart" in window || (navigator.maxTouchPoints ?? 0) > 0,
+    );
+  }, []);
+
+  // Sync mainImage to product changes during render so the variant swap
+  // never shows the previous product's image for a frame. Calling
+  // setState during render is the React-supported pattern for deriving
+  // state from props — it bails the in-flight render and re-runs with
+  // the new state synchronously, before commit.
+  if (product && product.id !== trackedProductId) {
+    setTrackedProductId(product.id);
+    setMainImage(product.imageUrl || "");
+    setSwatchExpanded(false);
+  }
+
+  // Webstore swatch thumbnails prefer the approved photoreal render so
+  // customers see the branded image even at swatch size. Falls back to
+  // the bare product image if no render has been approved.
+  const swatchImageKey = (v: { webstoreRenderedImageUrl: string | null; imageUrl: string | null }) =>
+    v.webstoreRenderedImageUrl ?? v.imageUrl;
+  const dedupedVariants = useMemo(
+    () => dedupeAndSortVariants(variantSiblings, product?.id ?? 0, swatchImageKey),
+    [variantSiblings, product?.id],
+  );
+  const SWATCH_LIMIT = 8;
+  const visibleSwatches = swatchExpanded
+    ? dedupedVariants
+    : dedupedVariants.slice(0, SWATCH_LIMIT);
+  const hiddenCount = Math.max(0, dedupedVariants.length - SWATCH_LIMIT);
+  const currentVariant = product
+    ? variantSiblings.find(v => v.productId === product.id)
+    : undefined;
 
   // Imprint zones — pulled from the distributor's configuration to drive
   // the LogoOverlay placement preview. The customer-facing page no longer
@@ -92,7 +147,6 @@ export default function StoreProductDetailPage({ productId }: { productId: strin
     if (sizeOptions.length > 0 && !selectedSize) setSelectedSize(sizeOptions[0]);
     if (printAreaOptions.length > 0 && !selectedPrintArea) setSelectedPrintArea(printAreaOptions[0]);
     if (printMethodOptions.length > 0 && !selectedPrintMethod) setSelectedPrintMethod(printMethodOptions[0]);
-    if (product?.imageUrl) setMainImage(product.imageUrl);
   }, [product]);
 
   const handleArtworkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,7 +199,17 @@ export default function StoreProductDetailPage({ productId }: { productId: strin
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* Image + Thumbnails — sticky on desktop */}
         <div className="lg:sticky lg:top-6 lg:self-start">
-          <div className="relative aspect-square rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${borderColor}` }}>
+          <div
+            className={`relative aspect-square rounded-xl overflow-hidden transition-all duration-150 ease-out ${isTouchDevice ? "" : "cursor-crosshair"}`}
+            style={{ backgroundColor: cardBg, border: `1px solid ${borderColor}` }}
+            onMouseMove={isTouchDevice ? undefined : (e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const x = ((e.clientX - rect.left) / rect.width) * 100;
+              const y = ((e.clientY - rect.top) / rect.height) * 100;
+              setMagnifier({ x, y });
+            }}
+            onMouseLeave={isTouchDevice ? undefined : () => setMagnifier(null)}
+          >
             {/*
               Phase 6 — Revised Option B (intentional two-layer divergence):
                 • VISUAL render reads from products.webstoreImprintPlacement*
@@ -167,9 +231,26 @@ export default function StoreProductDetailPage({ productId }: { productId: strin
               placement={extractWebstorePlacement(product)}
               renderedImageUrl={product.webstoreRenderedImageUrl}
               alt={product.name}
-              showToggle
               primaryColor={pc}
             />
+            {/* Lens-follows-cursor 2.5x zoom. Uses the same pixel source
+                as the main display (approved render preferred, bare image
+                fallback) so what you hover is what you magnify. */}
+            {magnifier && !isTouchDevice && (() => {
+              const zoomSrc = product.webstoreRenderedImageUrl || mainImage;
+              if (!zoomSrc) return null;
+              return (
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    backgroundImage: `url(${zoomSrc})`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundSize: "250%",
+                    backgroundPosition: `${magnifier.x}% ${magnifier.y}%`,
+                  }}
+                />
+              );
+            })()}
           </div>
 
           {allImages.length > 1 && (
@@ -206,9 +287,68 @@ export default function StoreProductDetailPage({ productId }: { productId: strin
           )}
           <p className="text-3xl font-bold mb-6" style={{ color: fg }}>${price.toFixed(2)}</p>
 
+          {/* Phase 8 — color variant swatch selector. Renders only when the
+              styleGroup carries multiple variants. Selecting a swatch
+              navigates to that variant's PDP, which swaps the main image
+              and pricing. Falls back to the legacy comma-separated colors
+              dropdown when the group has no siblings (ungrouped product). */}
+          {variantSiblings.length > 1 && dedupedVariants.length > 0 && (
+            <div className="mb-5">
+              <label className="text-[11px] font-semibold uppercase tracking-wider mb-2 block" style={{ color: mutedFg }}>
+                Color · {dedupedVariants.length}
+              </label>
+              <div
+                className="flex flex-wrap gap-2 p-1 overflow-hidden transition-[max-height] duration-300 ease-out"
+                style={{ maxHeight: swatchExpanded ? 2000 : 400 }}
+              >
+                {visibleSwatches.map(v => {
+                  const thumb = swatchImageKey(v);
+                  const hex = v.colorHex ?? colorNameToHex(v.colorName);
+                  const isCurrent = v.productId === product.id;
+                  return (
+                    <button
+                      key={v.productId}
+                      onClick={() => navigate(`~/s/${store.slug}/product/${v.productId}`)}
+                      title={v.colorName ?? "Variant"}
+                      aria-label={v.colorName ?? "Variant"}
+                      className={`w-12 h-12 rounded-lg overflow-hidden cursor-pointer border border-mt-border transition-transform duration-150 hover:scale-105 ${
+                        isCurrent
+                          ? "ring-2 ring-offset-2 ring-primary"
+                          : "hover:ring-1 hover:ring-offset-1 hover:ring-mt-ink-3"
+                      }`}
+                    >
+                      {thumb ? (
+                        <img src={thumb} alt={v.colorName ?? "Variant"} className="w-full h-full object-cover" />
+                      ) : hex ? (
+                        <div className="w-full h-full" style={{ backgroundColor: hex }} />
+                      ) : (
+                        <div className="w-full h-full bg-mt-surface-2 text-mt-ink-3 text-xs font-semibold flex items-center justify-center">?</div>
+                      )}
+                    </button>
+                  );
+                })}
+                {!swatchExpanded && hiddenCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSwatchExpanded(true)}
+                    aria-label={`Show ${hiddenCount} more colors`}
+                    className="w-12 h-12 rounded-lg bg-mt-surface-2 border border-mt-border text-[11px] font-semibold text-mt-ink-3 flex items-center justify-center cursor-pointer hover:border-mt-ink-3 transition-colors"
+                  >
+                    +{hiddenCount}
+                  </button>
+                )}
+              </div>
+              {currentVariant?.colorName && (
+                <p className="text-sm font-medium mt-3" style={{ color: mutedFg }}>
+                  Color: {currentVariant.colorName}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Variant dropdowns */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-            {colorOptions.length > 0 && (
+            {variantSiblings.length <= 1 && colorOptions.length > 0 && (
               <div>
                 <label className="text-[11px] font-semibold uppercase tracking-wider mb-1 block" style={{ color: mutedFg }}>Color</label>
                 <select className={selectCls} style={{ borderColor, color: fg }} value={selectedColor} onChange={(e) => setSelectedColor(e.target.value)}>

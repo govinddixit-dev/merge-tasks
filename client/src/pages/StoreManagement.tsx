@@ -27,6 +27,7 @@ import {
   BarChart3, Clock, Zap, Link2, Users, Eye, Pause, Play,
   CalendarPlus, ArrowRightLeft, ChevronRight, Check, AlertTriangle,
   RefreshCw, Smartphone, Tablet, Monitor, Printer, FolderOpen, FileText,
+  ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +42,7 @@ import { UsersTab } from "./StoreManagement/UsersTab";
 import { PrintProductsTab } from "./StoreManagement/PrintProductsTab";
 import { PrintRequestsTab } from "./StoreManagement/PrintRequestsTab";
 import { MediaTab } from "./StoreManagement/MediaTab";
+import { RendersTab } from "./StoreManagement/RendersTab";
 import { SettingsTab } from "./StoreManagement/SettingsTab";
 
 export default function StoreManagement() {
@@ -127,17 +129,63 @@ export default function StoreManagement() {
   // ─── Derived data ──────────────────────────────────────────────────────────
   const effectiveProducts = useMemo(() => {
     if (isNumeric && dbStore?.products?.length) {
-      return dbStore.products.map((p: { id: number; name: string; sku: string | null; category: string | null; basePrice: string | null; status: string | null; webstoreRenderStatus?: WebstoreRenderStatus | null; webstoreRenderedAt?: Date | string | null }) => ({
-        id: p.id,
-        name: p.name,
-        sku: p.sku || `SKU-${p.id}`,
-        category: p.category || "General",
-        price: p.basePrice ? `$${p.basePrice}` : "$0.00",
-        stock: 0, // TODO: Add stock tracking to products table
-        status: p.status === "active" ? "Active" : p.status || "Active",
-        webstoreRenderStatus: p.webstoreRenderStatus ?? null,
-        webstoreRenderedAt: p.webstoreRenderedAt ?? null,
-      }));
+      return dbStore.products.map((p: {
+        id: number;
+        name: string;
+        sku: string | null;
+        category: string | null;
+        basePrice: string | null;
+        customPrice?: string | null;
+        imageUrl?: string | null;
+        status: string | null;
+        webstoreRenderStatus?: WebstoreRenderStatus | null;
+        webstoreRenderedAt?: Date | string | null;
+        webstoreRenderedImageUrl?: string | null;
+        renderApproved?: boolean;
+        renderOverrideUrl?: string | null;
+        trackInventory?: boolean;
+        stockQuantity?: number | null;
+        sortOrder?: number;
+        featured?: boolean;
+        styleGroup?: string | null;
+        colorName?: string | null;
+        colorHex?: string | null;
+        swatchUrl?: string | null;
+        isVariantPrimary?: boolean;
+        effectiveRenderStatus?: WebstoreRenderStatus | "awaiting_analysis" | string | null;
+      }) => {
+        const priceSource = p.customPrice ?? p.basePrice;
+        const stock =
+          p.trackInventory && typeof p.stockQuantity === "number"
+            ? p.stockQuantity
+            : 0;
+        return {
+          id: p.id,
+          name: p.name,
+          sku: p.sku || `SKU-${p.id}`,
+          category: p.category || "General",
+          price: priceSource ? `$${priceSource}` : "$0.00",
+          basePrice: p.basePrice ?? null,
+          imageUrl: p.imageUrl ?? null,
+          stock,
+          status: p.status === "active" ? "Active" : p.status || "Active",
+          webstoreRenderStatus: p.webstoreRenderStatus ?? null,
+          effectiveRenderStatus: (p.effectiveRenderStatus ?? null) as WebstoreRenderStatus | "awaiting_analysis" | null,
+          webstoreRenderedAt: p.webstoreRenderedAt ?? null,
+          webstoreRenderedImageUrl: p.webstoreRenderedImageUrl ?? null,
+          renderApproved: p.renderApproved ?? false,
+          renderOverrideUrl: p.renderOverrideUrl ?? null,
+          trackInventory: p.trackInventory ?? false,
+          stockQuantity: p.stockQuantity ?? null,
+          sortOrder: p.sortOrder ?? 0,
+          featured: p.featured ?? false,
+          styleGroup: p.styleGroup ?? null,
+          colorName: p.colorName ?? null,
+          colorHex: p.colorHex ?? null,
+          swatchUrl: p.swatchUrl ?? null,
+          isVariantPrimary: p.isVariantPrimary ?? false,
+        };
+      });
     }
     return [];
   }, [isNumeric, dbStore]);
@@ -322,6 +370,7 @@ export default function StoreManagement() {
     { id: "print", label: "Print Products", icon: <Printer size={14} /> },
     { id: "print-requests", label: "Print Requests", icon: <FileText size={14} /> },
     { id: "media", label: "Media", icon: <FolderOpen size={14} /> },
+    { id: "renders", label: "Renders", icon: <ImageIcon size={14} /> },
     { id: "settings", label: "Settings", icon: <SettingsIcon size={14} /> },
   ];
 
@@ -665,6 +714,10 @@ export default function StoreManagement() {
 
       {activeTab === "media" && isNumeric && (
         <MediaTab storeId={numericId} />
+      )}
+
+      {activeTab === "renders" && isNumeric && (
+        <RendersTab storeId={numericId} />
       )}
 
       {activeTab === "settings" && (

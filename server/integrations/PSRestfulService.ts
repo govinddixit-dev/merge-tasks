@@ -23,6 +23,50 @@ const log = getLogger("psrestful");
 
 const BASE_URL = "https://api.psrestful.com";
 
+// Module-level FOB cache. Keyed by supplier code (not productId): the FOB
+// list is supplier-static, and an empty result is *also* cached so a supplier
+// with no exposed fob-points endpoint can't trigger a per-product retry loop.
+// On 2026-05-04 the missing negative-cache caused 112K calls in 4 days and
+// got our keys disabled — see fix in this commit.
+interface FobCacheEntry {
+  value: PSRestfulFobPoint[];
+  expiresAt: number;
+}
+const fobPointsCache = new Map<string, FobCacheEntry>();
+const FOB_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Module-level rate guard — defense in depth so a future hot-loop bug can't
+// burn through API quota again. Counts real HTTP calls only (cached responses
+// bypass this). Endpoint is reduced to a stable bucket (resource id stripped)
+// so a per-product loop counts as one bucket. When tripped we throw — the
+// per-product try/catch in supplierSyncEngine absorbs it and skips that item.
+const PSR_RATE_WINDOW_MS = 60 * 1000;
+const PSR_RATE_MAX_CALLS = 10;
+const endpointCallTimestamps = new Map<string, number[]>();
+
+function endpointBucket(path: string): string {
+  return path.replace(/\?.*$/, "").replace(/\/[^/]+$/, "/:id");
+}
+
+class PSRestfulRateGuardError extends Error {
+  constructor(bucket: string, count: number) {
+    super(`PSRESTful rate guard: ${bucket} hit ${count} calls in last 60s — skipping`);
+    this.name = "PSRestfulRateGuardError";
+  }
+}
+
+function checkRateGuard(path: string): void {
+  const bucket = endpointBucket(path);
+  const now = Date.now();
+  const recent = (endpointCallTimestamps.get(bucket) ?? []).filter(t => now - t < PSR_RATE_WINDOW_MS);
+  if (recent.length >= PSR_RATE_MAX_CALLS) {
+    log.warn(`PSRESTful rate guard tripped on ${bucket}: ${recent.length} calls in last 60s — skipping`);
+    throw new PSRestfulRateGuardError(bucket, recent.length);
+  }
+  recent.push(now);
+  endpointCallTimestamps.set(bucket, recent);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types — PSRESTful API responses
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +97,14 @@ export interface PSRestfulLocation {
   locationName: string; // e.g. "Left Chest", "Full Front"
   maxDecorationColors?: number;
   decorationMethods?: string[];
+}
+
+export interface PSRestfulFobPoint {
+  fobId: string;
+  fobPostalCode?: string | null;
+  fobCity?: string | null;
+  fobState?: string | null;
+  fobCountry?: string | null;
 }
 
 export interface PSRestfulProductDetail {
@@ -134,6 +186,8 @@ export class PSRestfulService {
     path: string,
     context?: { clientId?: number; organizationId?: number }
   ): Promise<T> {
+    checkRateGuard(path);
+
     const apiKey = await this.getApiKey(context);
     const url = `${BASE_URL}${path}`;
 
@@ -204,16 +258,79 @@ export class PSRestfulService {
   }
 
   /**
+   * Get available FOB (shipping origin) points for a product. Required as a
+   * prerequisite for getProductPricing — PSRESTful's pricing endpoint demands
+   * an explicit fob_id and provides no default. PromoStandards convention is
+   * that the first FOB in the array is the supplier's primary warehouse.
+   */
+  async getFobPoints(
+    supplierCode: string,
+    productId: string,
+    context?: { clientId?: number; organizationId?: number }
+  ): Promise<PSRestfulFobPoint[]> {
+    const data = await this.get<{ FobPointArray?: { FobPoint?: PSRestfulFobPoint[] } }>(
+      `/v1.0.0/suppliers/${encodeURIComponent(supplierCode)}/fob-points/${encodeURIComponent(productId)}`,
+      context
+    );
+    return data.FobPointArray?.FobPoint ?? [];
+  }
+
+  /**
+   * Cached variant of getFobPoints. Returns the FOB list for a supplier with
+   * a 24h module-level cache. Empty results are cached too — so a supplier
+   * with no exposed FOB endpoint won't trigger a per-product retry loop.
+   *
+   * `productId` is still passed to the underlying endpoint (PSRESTful's URL
+   * requires it), but the cache key is supplier-only because the FOB list
+   * is supplier-static in practice.
+   */
+  async getFobPointsCached(
+    supplierCode: string,
+    productId: string,
+    context?: { clientId?: number; organizationId?: number }
+  ): Promise<PSRestfulFobPoint[]> {
+    const now = Date.now();
+    const cached = fobPointsCache.get(supplierCode);
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+    // Cache populates on EVERY outcome — success, empty, or error. The
+    // first follow-up commit caused a retry storm because errors thrown
+    // by the rate guard (or any HTTP failure) bypassed cache.set() and
+    // every subsequent product re-entered and re-threw. Now: one call
+    // attempt per supplier per TTL window, period.
+    let value: PSRestfulFobPoint[] = [];
+    try {
+      value = await this.getFobPoints(supplierCode, productId, context);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn(`getFobPoints failed for ${supplierCode}, negative-caching to prevent retry storm: ${msg}`);
+    }
+    fobPointsCache.set(supplierCode, { value, expiresAt: now + FOB_CACHE_TTL_MS });
+    return value;
+  }
+
+  /**
    * Get pricing and configuration for a product.
-   * Returns quantity tiers with pricing in the supplier's native currency.
+   *
+   * Requires explicit currency, fob_id, and price_type — PSRESTful enforced
+   * these as required query params around 2026-04-30. We request USD and let
+   * the supplierSyncEngine converter normalize to home currency, since not
+   * every supplier supports every currency natively.
    */
   async getProductPricing(
     supplierCode: string,
     productId: string,
+    opts: { currency: string; fobId: string; priceType?: "Net" | "List" | "Customer" },
     context?: { clientId?: number; organizationId?: number }
   ): Promise<PSRestfulPriceTier[]> {
+    const params = new URLSearchParams({
+      currency: opts.currency,
+      fob_id: opts.fobId,
+      price_type: opts.priceType ?? "Net",
+    });
     const data = await this.get<{ priceTiers?: PSRestfulPriceTier[] }>(
-      `/v1.0.0/suppliers/${encodeURIComponent(supplierCode)}/pricing-and-configuration/${encodeURIComponent(productId)}`,
+      `/v1.0.0/suppliers/${encodeURIComponent(supplierCode)}/pricing-and-configuration/${encodeURIComponent(productId)}?${params.toString()}`,
       context
     );
     return data.priceTiers ?? [];

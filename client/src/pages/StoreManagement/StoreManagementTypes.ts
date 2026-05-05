@@ -7,7 +7,7 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Tab = 'overview' | 'products' | 'orders' | 'preview' | 'users' | 'print' | 'print-requests' | 'media' | 'settings';
+export type Tab = 'overview' | 'products' | 'orders' | 'preview' | 'users' | 'print' | 'print-requests' | 'media' | 'renders' | 'settings';
 export type PreviewDevice = 'mobile' | 'tablet' | 'desktop';
 
 export interface StoreData {
@@ -90,6 +90,22 @@ export interface StoreProduct {
   webstoreRenderStatus?: WebstoreRenderStatus | null;
   effectiveRenderStatus?: EffectiveRenderStatus | null;
   webstoreRenderedAt?: Date | string | null;
+  // Phase 8 — variant fields surfaced via storesCrud.getById projection.
+  styleGroup?: string | null;
+  colorName?: string | null;
+  colorHex?: string | null;
+  swatchUrl?: string | null;
+  isVariantPrimary?: boolean;
+  imageUrl?: string | null;
+  basePrice?: string | null;
+  // Per-binding storeProducts fields.
+  renderApproved?: boolean;
+  webstoreRenderedImageUrl?: string | null;
+  renderOverrideUrl?: string | null;
+  trackInventory?: boolean;
+  stockQuantity?: number | null;
+  sortOrder?: number;
+  featured?: boolean;
   [key: string]: unknown;
 }
 

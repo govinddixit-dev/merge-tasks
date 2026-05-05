@@ -107,23 +107,41 @@ interface CatalogProduct {
   sku: string | null;
   basePrice: string | null;
   imageUrl: string | null;
+  colorName?: string | null;
 }
 
 /**
- * Narrow the raw typed query (all product columns) to the fields the
- * catalog dropdown actually cares about — SKU, name, base price, image —
- * and a case-insensitive filter that matches either SKU or name prefix or
- * substring. Kept small and pure so it can be reused by both the SKU cell
- * and the description cell without a second query.
+ * Phase 8 — variant-aware catalog group used by the autocomplete dropdowns.
+ * The product autocomplete now shows one row per styleGroup with a swatch
+ * sub-row so distributors don't see 8 dupes of the same product. Picking
+ * the row body sets the primary variant; picking a swatch sets that color.
  */
-function filterCatalog(items: CatalogProduct[], query: string, limit = 8): CatalogProduct[] {
+interface CatalogGroup {
+  styleGroup: string;
+  primary: CatalogProduct;
+  variants: Array<{
+    productId: number;
+    colorName: string | null;
+    colorHex: string | null;
+    swatchUrl: string | null;
+    imageUrl: string | null;
+  }>;
+  variantCount: number;
+}
+
+/**
+ * Filter groups by the typed query against the primary variant's name/sku.
+ * Empty query returns the first 8 groups so the dropdown shows a useful
+ * starting set. Match limit kept conservative so the popup stays compact.
+ */
+function filterGroups(groups: CatalogGroup[], query: string, limit = 8): CatalogGroup[] {
   const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const out: CatalogProduct[] = [];
-  for (const p of items) {
-    const skuMatch = p.sku ? p.sku.toLowerCase().includes(q) : false;
-    const nameMatch = p.name.toLowerCase().includes(q);
-    if (skuMatch || nameMatch) out.push(p);
+  if (!q) return groups.slice(0, limit);
+  const out: CatalogGroup[] = [];
+  for (const g of groups) {
+    const skuMatch = g.primary.sku ? g.primary.sku.toLowerCase().includes(q) : false;
+    const nameMatch = g.primary.name.toLowerCase().includes(q);
+    if (skuMatch || nameMatch) out.push(g);
     if (out.length >= limit) break;
   }
   return out;
@@ -187,6 +205,37 @@ export default function CreateInvoice() {
       imageUrl: p.imageUrl ?? null,
     }));
   }, [catalogPage]);
+
+  // Phase 8 — variant-grouped feed for the autocomplete dropdowns. Keeps
+  // catalogItems around for the SKU rehydration path (line items reference
+  // a single productId); the dropdowns now show one tile per styleGroup
+  // with color swatches so distributors aren't scrolling through dupes.
+  const { data: groupedCatalogRaw } = trpc.products.listGrouped.useQuery(
+    { limit: 200 },
+    { staleTime: 60 * 1000 },
+  );
+  const catalogGroups = useMemo<CatalogGroup[]>(() => {
+    const items = groupedCatalogRaw?.items ?? [];
+    return items.map((g) => ({
+      styleGroup: g.styleGroup,
+      primary: {
+        id: g.primary.id,
+        name: g.primary.name,
+        sku: g.primary.sku ?? null,
+        basePrice: g.primary.basePrice ?? null,
+        imageUrl: g.primary.imageUrl ?? null,
+        colorName: g.primary.colorName ?? null,
+      },
+      variants: g.variants.map((v) => ({
+        productId: v.productId,
+        colorName: v.colorName,
+        colorHex: v.colorHex,
+        swatchUrl: v.swatchUrl,
+        imageUrl: v.imageUrl,
+      })),
+      variantCount: g.variantCount,
+    }));
+  }, [groupedCatalogRaw]);
 
   // ── Client selection ───────────────────────────────────────────────────
   const [clientSearch, setClientSearch] = useState("");
@@ -737,7 +786,7 @@ export default function CreateInvoice() {
               <LineItemGrid
                 lines={lines}
                 taxRate={taxRate}
-                catalog={catalogItems}
+                catalog={catalogGroups}
                 updateLine={updateLine}
                 requestRemoveLine={requestRemoveLine}
                 addLine={addLine}
@@ -970,7 +1019,7 @@ function ClientPicker(props: ClientPickerProps) {
 interface LineItemGridProps {
   lines: DraftLine[];
   taxRate: number;
-  catalog: CatalogProduct[];
+  catalog: CatalogGroup[];
   updateLine: (uid: string, patch: Partial<DraftLine>) => void;
   requestRemoveLine: (uid: string) => void;
   addLine: () => void;
@@ -1048,7 +1097,7 @@ function HeaderCell({
 interface LineItemRowProps {
   line: DraftLine;
   taxRate: number;
-  catalog: CatalogProduct[];
+  catalog: CatalogGroup[];
   updateLine: (uid: string, patch: Partial<DraftLine>) => void;
   requestRemoveLine: (uid: string) => void;
 }
@@ -1165,13 +1214,13 @@ function SkuWithCatalog({
   onPick,
 }: {
   value: string;
-  catalog: CatalogProduct[];
+  catalog: CatalogGroup[];
   onValueChange: (v: string) => void;
   onPick: (p: CatalogProduct) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
-  const results = useMemo(() => filterCatalog(catalog, value), [catalog, value]);
+  const results = useMemo(() => filterGroups(catalog, value), [catalog, value]);
 
   useEffect(() => { if (cursor >= results.length) setCursor(0); }, [results.length, cursor]);
 
@@ -1186,19 +1235,19 @@ function SkuWithCatalog({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setCursor(c => Math.min(results.length - 1, c + 1)); }
           else if (e.key === "ArrowUp") { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
-          else if (e.key === "Enter" && results[cursor]) { e.preventDefault(); onPick(results[cursor]); setOpen(false); }
+          else if (e.key === "Enter" && results[cursor]) { e.preventDefault(); onPick(results[cursor].primary); setOpen(false); }
           else if (e.key === "Escape") setOpen(false);
         }}
         placeholder="SKU"
-        className="w-full h-9 px-2 rounded-md border text-[12px] font-mono text-mt-ink outline-none transition-all focus:ring-2 focus:ring-[#654BF9]/20 focus:border-[#654BF9]"
+        className="w-full h-9 px-2 rounded-md border text-[12px] font-mono text-mt-ink outline-none transition-all duration-150 focus:ring-2 focus:ring-[#654BF9]/20 focus:border-[#654BF9]"
         style={{ borderColor: "#E5E7EB" }}
       />
       <AnimatePresence>
         {open && results.length > 0 && (
           <motion.div
             {...DROPDOWN_ANIM}
-            className="absolute left-0 z-30 mt-1 rounded-md border border-mt-border bg-white shadow-md"
-            style={{ width: 320 }}
+            className="absolute left-0 z-30 mt-1 rounded-xl border border-mt-border bg-white shadow-lg overflow-hidden"
+            style={{ width: 360 }}
           >
             <CatalogResultList results={results} cursor={cursor} onPick={(p) => { onPick(p); setOpen(false); }} />
           </motion.div>
@@ -1218,14 +1267,14 @@ function DescriptionWithCatalog({
 }: {
   productName: string;
   description: string;
-  catalog: CatalogProduct[];
+  catalog: CatalogGroup[];
   onNameChange: (v: string) => void;
   onDescriptionChange: (v: string) => void;
   onPick: (p: CatalogProduct) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
-  const results = useMemo(() => filterCatalog(catalog, productName), [catalog, productName]);
+  const results = useMemo(() => filterGroups(catalog, productName), [catalog, productName]);
   useEffect(() => { if (cursor >= results.length) setCursor(0); }, [results.length, cursor]);
 
   return (
@@ -1239,11 +1288,11 @@ function DescriptionWithCatalog({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setCursor(c => Math.min(results.length - 1, c + 1)); }
           else if (e.key === "ArrowUp") { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
-          else if (e.key === "Enter" && results[cursor]) { e.preventDefault(); onPick(results[cursor]); setOpen(false); }
+          else if (e.key === "Enter" && results[cursor]) { e.preventDefault(); onPick(results[cursor].primary); setOpen(false); }
           else if (e.key === "Escape") setOpen(false);
         }}
         placeholder="Item name or description"
-        className="w-full h-9 px-2 rounded-md border text-[13px] text-mt-ink outline-none transition-all focus:ring-2 focus:ring-[#654BF9]/20 focus:border-[#654BF9]"
+        className="w-full h-9 px-2 rounded-md border text-[13px] text-mt-ink outline-none transition-all duration-150 focus:ring-2 focus:ring-[#654BF9]/20 focus:border-[#654BF9]"
         style={{ borderColor: "#E5E7EB" }}
       />
       {description.length > 0 || open ? (
@@ -1252,7 +1301,7 @@ function DescriptionWithCatalog({
           value={description}
           onChange={(e) => onDescriptionChange(e.target.value)}
           placeholder="Detail (optional)"
-          className="mt-1 w-full h-8 px-2 rounded-md border text-[12px] text-mt-ink-3 outline-none transition-all focus:ring-2 focus:ring-[#654BF9]/20 focus:border-[#654BF9]"
+          className="mt-1 w-full h-8 px-2 rounded-md border text-[12px] text-mt-ink-3 outline-none transition-all duration-150 focus:ring-2 focus:ring-[#654BF9]/20 focus:border-[#654BF9]"
           style={{ borderColor: "#F0F0F0" }}
         />
       ) : null}
@@ -1260,8 +1309,8 @@ function DescriptionWithCatalog({
         {open && results.length > 0 && (
           <motion.div
             {...DROPDOWN_ANIM}
-            className="absolute left-0 z-30 mt-1 rounded-md border border-mt-border bg-white shadow-md"
-            style={{ width: 360 }}
+            className="absolute left-0 z-30 mt-1 rounded-xl border border-mt-border bg-white shadow-lg overflow-hidden"
+            style={{ width: 400 }}
           >
             <CatalogResultList results={results} cursor={cursor} onPick={(p) => { onPick(p); setOpen(false); }} />
           </motion.div>
@@ -1271,34 +1320,116 @@ function DescriptionWithCatalog({
   );
 }
 
+/**
+ * CatalogResultList — variant-grouped dropdown rows. Each row shows the
+ * primary variant (thumbnail, name, SKU, price); when a group has multiple
+ * variants, a swatch sub-row lets the operator pick a specific color.
+ *
+ * Click the row body → emits primary; click a swatch → emits that variant.
+ */
 function CatalogResultList({
   results,
   cursor,
   onPick,
 }: {
-  results: CatalogProduct[];
+  results: CatalogGroup[];
   cursor: number;
   onPick: (p: CatalogProduct) => void;
 }) {
   return (
-    <ul className="py-1 max-h-72 overflow-y-auto">
-      {results.map((p, i) => (
-        <li key={p.id}>
+    <ul className="py-1 max-h-80 overflow-y-auto">
+      {results.map((g, i) => (
+        <li
+          key={g.styleGroup}
+          className={
+            i === cursor
+              ? "bg-mt-surface-2"
+              : "hover:bg-mt-surface-2 transition-colors duration-150"
+          }
+        >
           <button
             type="button"
-            // Use onMouseDown so the parent input's onBlur doesn't close the
-            // list before this handler fires.
-            onMouseDown={(e) => { e.preventDefault(); onPick(p); }}
-            className={`w-full text-left px-3 py-2 text-[12px] transition-colors ${i === cursor ? "bg-mt-surface-2" : "hover:bg-mt-surface-2"}`}
+            onMouseDown={(e) => { e.preventDefault(); onPick(g.primary); }}
+            className="w-full text-left px-3 py-2 flex items-start gap-2.5"
           >
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium text-mt-ink truncate">{p.name}</span>
-              {p.basePrice && (
-                <span className="text-mt-ink-3 tabular-nums shrink-0">${parseFloat(p.basePrice).toFixed(2)}</span>
+            {g.primary.imageUrl ? (
+              <img
+                src={g.primary.imageUrl}
+                alt={g.primary.name}
+                draggable={false}
+                className="h-10 w-10 rounded-md border border-mt-border object-cover bg-mt-surface-2 shrink-0"
+              />
+            ) : (
+              <div className="h-10 w-10 rounded-md border border-mt-border bg-mt-surface-2 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] font-semibold text-mt-ink truncate">
+                  {g.primary.name}
+                </span>
+                {g.primary.basePrice && (
+                  <span className="text-[12px] text-mt-ink-3 font-mono tabular-nums shrink-0">
+                    ${parseFloat(g.primary.basePrice).toFixed(2)}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                {g.primary.sku && (
+                  <span className="text-[11px] font-mono text-mt-ink-4 truncate">
+                    {g.primary.sku}
+                  </span>
+                )}
+                {g.variantCount > 1 && (
+                  <>
+                    <span className="text-[10px] text-mt-ink-4">·</span>
+                    <span className="text-[11px] text-mt-ink-3">
+                      {g.variantCount} colors
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </button>
+          {g.variantCount > 1 && (
+            <div className="px-3 pb-2 pl-[3.25rem] flex items-center gap-1.5 flex-wrap">
+              {g.variants.slice(0, 6).map((v) => (
+                <button
+                  key={v.productId}
+                  type="button"
+                  title={v.colorName ?? "Variant"}
+                  aria-label={v.colorName ?? "Variant"}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onPick({
+                      id: v.productId,
+                      name: g.primary.name,
+                      sku: g.primary.sku,
+                      basePrice: g.primary.basePrice,
+                      imageUrl: v.imageUrl ?? g.primary.imageUrl,
+                      colorName: v.colorName,
+                    });
+                  }}
+                  style={
+                    v.colorHex
+                      ? { backgroundColor: v.colorHex }
+                      : v.swatchUrl
+                      ? {
+                          backgroundImage: `url(${v.swatchUrl})`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }
+                      : { backgroundColor: "#D4D4D4" }
+                  }
+                  className="h-4 w-4 rounded-full ring-1 ring-mt-border hover:ring-2 hover:ring-primary transition-all duration-150"
+                />
+              ))}
+              {g.variantCount > 6 && (
+                <span className="text-[10px] font-semibold text-mt-ink-4 ml-0.5">
+                  +{g.variantCount - 6}
+                </span>
               )}
             </div>
-            {p.sku && <p className="text-[11px] font-mono text-mt-ink-4 mt-0.5">{p.sku}</p>}
-          </button>
+          )}
         </li>
       ))}
     </ul>

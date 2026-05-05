@@ -54,6 +54,7 @@ import { supplierSyncRouter } from "./routers/supplierSync";
 import { supplierCredentialsRouter } from "./routers/supplierCredentials";
 import { psRestfulSubAccountsRouter } from "./routers/psRestfulSubAccounts";
 import { fulfillmentRouter } from "./routers/fulfillment";
+import { renderManagerRouter } from "./routers/renderManager";
 import { revokeAllUserSessions } from "./utils/tokenBlocklist";
 
 export const appRouter = router({
@@ -154,6 +155,7 @@ export const appRouter = router({
   supplierCredentials: supplierCredentialsRouter,
   psRestfulSubAccounts: psRestfulSubAccountsRouter,
   fulfillment: fulfillmentRouter,
+  renderManager: renderManagerRouter,
 });
 
 export type AppRouter = typeof appRouter;

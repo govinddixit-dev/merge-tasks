@@ -66,13 +66,9 @@ schema, migrations, and documentation.
 
 ## Setup
 
-1. **Install dependencies** (requires Node.js 20+). The repo uses **pnpm**
-   (`package.json` / `pnpm-lock.yaml`). Use `corepack enable` if pnpm is not
-   installed. `npm install` often fails on a strict peer-deps conflict between
-   Vite 7 and `@builder.io/vite-plugin-jsx-loc`; use `pnpm install`, or
-   `npm install --legacy-peer-deps` if you must use npm.
+1. **Install dependencies** (requires Node.js 20+):
    ```
-   pnpm install
+   npm install
    ```
 2. **Configure environment.** Copy `.env.example` to `.env` and fill in
    every required variable. `server/utils/validateEnv.ts` enforces the
@@ -81,37 +77,21 @@ schema, migrations, and documentation.
 3. **Run migrations.** Drizzle manages schema with numbered SQL files
    under `/drizzle`:
    ```
-   pnpm run db:push
+   npm run db:push
    ```
 4. **Seed (optional):**
    ```
-   pnpm run seed
+   npm run seed
    ```
 
 ## Running locally
 
 ```
-pnpm dev             # tsx watch — API + Vite HMR
-pnpm run check       # tsc --noEmit (strict type check)
-pnpm test            # vitest run
-pnpm run e2e         # playwright (headless)
+npm run dev          # tsx watch — API + Vite HMR
+npm run check        # tsc --noEmit (strict type check)
+npm run test         # vitest run
+npm run e2e          # playwright (headless)
 ```
-
-### Docker (MySQL + Redis + app + worker)
-
-From the repo root, with Docker Engine installed:
-
-```
-docker compose up --build
-```
-
-Then open **http://localhost:3080**. The stack runs `NODE_ENV=production`
-with a production build; MySQL and Redis are **not** published on the host
-(only the app is, on **3080**), so this avoids common port clashes with
-`:3306`, `:6379`, and `:3000`. Migrations run automatically on app startup.
-Stripe is left unset in the default compose file because `validateEnv`
-rejects `sk_test_...` keys when `NODE_ENV=production`; add real keys via
-`docker compose --env-file ...` or compose overrides when you need billing.
 
 The Vite dev server proxies `/api/*` to the Express server so a single
 `localhost` origin serves both.
@@ -252,5 +232,3 @@ and cross-sprint audit reports. Notable entries:
 ## License
 
 Proprietary. See [LICENSE](./LICENSE). All rights reserved.
-# merge-tasks
-# merge-tasks

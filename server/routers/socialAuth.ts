@@ -17,12 +17,11 @@ import { SOCIAL_AUTH_LIMIT } from "../utils/rateLimiter";
 
 //  Google OAuth helpers 
 function buildGoogleAuthUrl(origin: string): string {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message:
-        "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the project root `.env` file (or the process environment), then restart the server.",
+      message: "Google OAuth not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Settings.",
     });
   }
 
@@ -43,8 +42,7 @@ function buildMicrosoftAuthUrl(origin: string): string {
   if (!clientId) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message:
-        "Microsoft OAuth not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in the project root `.env` file (or the process environment), then restart the server.",
+      message: "Microsoft OAuth not configured. Please add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in Settings.",
     });
   }
 
@@ -80,8 +78,8 @@ export const socialAuthRouter = router({
 //  Express callback handlers (registered in _core/index.ts) 
 
 export async function exchangeGoogleCode(code: string, redirectUri: string) {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Google OAuth not configured" });
 
   const resp = await fetch("https://oauth2.googleapis.com/token", {

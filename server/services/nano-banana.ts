@@ -108,6 +108,31 @@ export type NanoBananaRenderInput = {
     h: number;
     zone?: string;
   };
+  /**
+   * Phase 7 — distributor's free-text per-binding prompt tweak persisted on
+   * storeProducts.renderPromptAdjustment ("logo 30% smaller", etc). Appended
+   * to the base prompt as a final overriding instruction. Optional; absent
+   * for first-time renders and empty re-renders.
+   */
+  promptAdjustment?: string;
+  /**
+   * Phase 7+ — distributor's manual placement coordinates from the Visual
+   * Placement Editor (storeProducts.renderPlacement* columns). Percentages
+   * 0..100; x/y are the top-left edge of the logo, width/height are sized
+   * relative to the product image, rotation is degrees clockwise. Emitted
+   * as the final block of the prompt with absolute-priority framing so it
+   * dominates both the AI-derived `placement` and the decoration-physics
+   * default sizing. Distinct channel from promptAdjustment because coords
+   * are structured data, not free text — and they need top-left-vs-center
+   * disambiguation that a generic "adjustment" wrapper can't provide.
+   */
+  manualPlacement?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+  };
 };
 
 export type NanoBananaRenderResult =
@@ -144,19 +169,147 @@ export type NanoBananaRenderResult =
  *   4. Match lighting to the source. The logo's shading must follow
  *      the product photo's existing light direction.
  */
-function buildPrompt(input: NanoBananaRenderInput): string {
+// Spatial-language buckets for manual-placement coordinates. Gemini and
+// other image models respond more reliably to natural-language position
+// descriptions ("centered horizontally, near the top") than to numeric
+// percentages, which they tend to ignore or interpret loosely. The
+// percentages are still emitted as a secondary reference, but the
+// spatial paragraph leads. Buckets operate on the logo's CENTER point
+// (x + w/2, y + h/2), since the manual coords are top-left-edge.
+function describeHorizontal(centerXPct: number): string {
+  if (centerXPct < 30) return "on the left side";
+  if (centerXPct > 70) return "on the right side";
+  return "centered horizontally";
+}
+function describeVertical(centerYPct: number): string {
+  if (centerYPct < 30) return "near the top";
+  if (centerYPct > 70) return "near the bottom";
+  return "at mid-height";
+}
+function describeSize(widthPct: number): string {
+  if (widthPct < 10) return "small, subtle branding";
+  if (widthPct > 20) return "large, prominent";
+  return "medium sized";
+}
+
+// Hat-category detection. Gemini consistently oversizes logos on structured
+// caps and knit toques — the general decoration norms in DECORATION_PROMPTS
+// reference "credit-card size" and "25-30% of the panel" which the model
+// interprets as full-front-panel-sized logos. Detecting headwear from the
+// product name lets us inject a stricter sizing rule without changing the
+// generic decoration norms (which are correct for shirts, hoodies, etc).
+// Category column is unreliable for PSRESTful imports (see supplierSync.ts:213-215),
+// hence keyword matching on the name.
+const HAT_NAME_PATTERN = /\b(cap|hat|toque|beanie|snapback|trucker|visor|bucket)\b/i;
+
+function isHatProduct(productName?: string): boolean {
+  if (!productName) return false;
+  return HAT_NAME_PATTERN.test(productName);
+}
+
+const HAT_SIZING_OVERRIDE = [
+  ``,
+  `============================================================`,
+  `CRITICAL HAT SIZING`,
+  `============================================================`,
+  `This product is a structured cap/hat. Logos on hats must be SIGNIFICANTLY SMALLER than on apparel. The logo should appear as a small, restrained embroidered patch on the front panel — approximately the size of a credit card (3cm x 5cm on the actual cap). Do NOT scale the logo to fill the front panel. Think subtle corporate branding, not billboard. Maximum logo width: 8% of the total image width. If in doubt, go SMALLER.`,
+  `============================================================`,
+].join("\n");
+
+type PositioningMethod = "manual-spatial" | "ai-derived";
+
+function buildPrompt(input: NanoBananaRenderInput): { prompt: string; positioningMethod: PositioningMethod } {
   const { x, y, w, h, zone } = input.placement;
   const decorationPhysics = DECORATION_PROMPTS[input.decorationMethod];
   const productLabel = input.productName ? ` (${input.productName})` : "";
   const zonePhrase = zone ? zone.replace(/_/g, " ") : "the indicated region";
   const decorationLabel = input.decorationMethod.replace(/_/g, " ");
+  const hatBlock = isHatProduct(input.productName) ? [HAT_SIZING_OVERRIDE] : [];
 
   const xPct = (x * 100).toFixed(1);
   const yPct = (y * 100).toFixed(1);
   const wPct = (w * 100).toFixed(1);
   const hPct = (h * 100).toFixed(1);
 
-  return [
+  // Phase 7 distributor adjustment. Framed as a CRITICAL OVERRIDE block at
+  // the end of the prompt — LLMs weight later instructions more heavily,
+  // and the explicit override framing tells the model to drop conflicting
+  // earlier placement/sizing/positioning rules. Trim + 500-char cap prevents
+  // a runaway prompt from exhausting the model's context.
+  const adjustment = input.promptAdjustment?.trim().slice(0, 500);
+  const adjustmentBlock = adjustment
+    ? [
+        ``,
+        `============================================================`,
+        `CRITICAL OVERRIDE — DISTRIBUTOR ADJUSTMENT`,
+        `============================================================`,
+        `The distributor reviewing this render has specifically requested the following adjustment.`,
+        `This instruction takes ABSOLUTE PRIORITY over any default placement, sizing, zone, or`,
+        `positioning instructions stated above. Where this adjustment conflicts with earlier`,
+        `instructions in this prompt — including the bounding box coordinates, zone name, and`,
+        `decoration-norm size guidance — follow this adjustment instead.`,
+        ``,
+        `Distributor's adjustment:`,
+        `"${adjustment}"`,
+        ``,
+        `Apply this adjustment exactly. All other integration requirements (lighting match, fabric`,
+        `drape, decoration physics, photographic realism, preserving the rest of the garment) still`,
+        `apply — only the placement/sizing/positioning rules are overridden.`,
+        `============================================================`,
+      ]
+    : [];
+
+  // Phase 7+ visual placement editor pin. Rendered AFTER the free-text
+  // adjustment block so it is the very last thing the model reads — late
+  // instructions are weighted highest, and this block needs to dominate
+  // both the AI-derived `placement` paragraph and the decoration-norm
+  // sizing rules baked into DECORATION_PROMPTS.
+  //
+  // 2026-05-04 spatial rewrite: image models respond more reliably to
+  // natural-language position descriptions ("centered horizontally,
+  // near the top") than to bare percentages, which they tend to ignore
+  // or interpret loosely. We now LEAD with the spatial description and
+  // emit the exact percentages as a secondary precision reference. The
+  // dual-path save (PlacementEditor's flat-overlay fallback) remains
+  // the authoritative outcome when the model still disregards both —
+  // this rewrite is a compliance-rate improvement, not a guarantee.
+  const mp = input.manualPlacement;
+  const manualPlacementBlock = mp
+    ? (() => {
+        const mx = mp.x.toFixed(1);
+        const my = mp.y.toFixed(1);
+        const mw = mp.width.toFixed(1);
+        const mh = mp.height.toFixed(1);
+        const mr = mp.rotation.toFixed(1);
+        // Buckets describe the LOGO'S CENTER point. Manual coords are
+        // top-left edge, so center = (x + w/2, y + h/2).
+        const centerX = mp.x + mp.width / 2;
+        const centerY = mp.y + mp.height / 2;
+        const horiz = describeHorizontal(centerX);
+        const vert = describeVertical(centerY);
+        const size = describeSize(mp.width);
+        const rotationPhrase = Math.abs(mp.rotation) < 0.5
+          ? "with no rotation"
+          : `rotated ${mr}° clockwise`;
+        return [
+          ``,
+          `============================================================`,
+          `ABSOLUTE POSITIONING OVERRIDE — MANUAL PLACEMENT`,
+          `============================================================`,
+          `CRITICAL: The distributor has manually positioned the logo. Place the logo ${horiz}, ${vert} of the product, at a ${size} scale, ${rotationPhrase}. This is the placement to render — do NOT use the default placement, the AI-derived bounding box, or the zone-based heuristics from earlier in this prompt.`,
+          ``,
+          `Precision reference (use the spatial description above as primary; these percentages are a secondary check):`,
+          `- The logo's TOP-LEFT corner sits at ${mx}% from the left edge and ${my}% from the top edge of the product image.`,
+          `- The logo's width is ${mw}% of the product image width; height is ${mh}% of the product image height. Do not preserve aspect ratio if it conflicts with these.`,
+          `- Rotation: ${mr} degrees clockwise around the logo's own center.`,
+          `- IGNORE the earlier "Logo placement" coordinates, the zone name, and any decoration-norm sizing guidance from the decoration physics paragraph (e.g. "3-4 inches wide", "10-12% of image width", "credit-card size"). Those are defaults; this manual placement supersedes all of them.`,
+          `- All other integration requirements (lighting match, fabric drape, decoration physics surface treatment, photographic realism, preserving the rest of the garment) still apply — only placement, sizing, and rotation are overridden.`,
+          `============================================================`,
+        ];
+      })()
+    : [];
+
+  const prompt = [
     `Composite the logo from Image 2 onto the apparel${productLabel} in Image 1 as a realistic ${decorationLabel} decoration on the ${zonePhrase}.`,
     ``,
     `Logo placement (relative to the visible apparel area):`,
@@ -172,11 +325,17 @@ function buildPrompt(input: NanoBananaRenderInput): string {
     `- The decoration must look like a real photograph of a finished garment, not a digital mockup or AI illustration.`,
     ``,
     decorationPhysics,
+    ...hatBlock,
     ``,
     `Preserve the apparel's shape, fabric texture, lighting, drape, and background exactly as they appear in Image 1. Only the addition of the decoration changes.`,
     ``,
     `Output: a single photographic image with no text, watermarks, captions, borders, or alterations to the garment beyond the decoration.`,
+    ...adjustmentBlock,
+    ...manualPlacementBlock,
   ].join("\n");
+
+  const positioningMethod: PositioningMethod = mp ? "manual-spatial" : "ai-derived";
+  return { prompt, positioningMethod };
 }
 
 /**
@@ -313,7 +472,8 @@ export async function renderProductWithLogo(
   let pngBuffer: Buffer;
   let modelUsed: string;
   try {
-    const prompt = buildPrompt(input);
+    const { prompt, positioningMethod } = buildPrompt(input);
+    log.info(`[nano-banana] productId=${productId} positioning=${positioningMethod}`);
     const result = await callNanoBanana(prompt, productImg, logoImg, controller.signal);
     pngBuffer = result.buffer;
     modelUsed = result.modelUsed;

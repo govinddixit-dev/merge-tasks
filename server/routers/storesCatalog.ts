@@ -4,7 +4,7 @@
  * Procedures: assignProducts, uploadBanner, removeProduct, updateStoreProduct
  */
 import { z } from "zod";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { stores, storeProducts, products, type InsertStoreProduct } from "../../drizzle/schema";
@@ -14,6 +14,7 @@ import { nanoid } from "nanoid";
 import { getOrgScope } from "../utils/orgScope";
 import { enqueueRenderForStoreProduct, fanOutRenderForProduct } from "../services/webstore-render-orchestrator";
 import { runAnalysisAndPersist } from "../services/webstore-imprint-placement";
+import { attachStyleGroupToStore, detachStyleGroupFromStore } from "../services/storeProductAttach";
 import { getLogger } from "../utils/logger";
 
 const log = getLogger("storesCatalog");
@@ -156,12 +157,169 @@ export const storesCatalogRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Phase 8 — variant-aware add. Attaches every variant in a styleGroup
+   * to the store; auto-renders only the primary (lazy fan-out, see
+   * services/storeProductAttach.ts). Idempotent.
+   */
+  addStyleGroup: protectedProcedure
+    .input(z.object({ storeId: z.number(), styleGroup: z.string().min(1).max(128) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+      const storeRows = await db.select({ id: stores.id }).from(stores).where(and(eq(stores.id, input.storeId), scope.stores)).limit(1);
+      if (storeRows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
+      return attachStyleGroupToStore(db, input.storeId, input.styleGroup, scope.products);
+    }),
+
+  /**
+   * Phase 8 — symmetric to addStyleGroup. Removes every variant of a
+   * group from the store. Idempotent — removes whatever is present.
+   */
+  removeStyleGroup: protectedProcedure
+    .input(z.object({ storeId: z.number(), styleGroup: z.string().min(1).max(128) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+      const storeRows = await db.select({ id: stores.id }).from(stores).where(and(eq(stores.id, input.storeId), scope.stores)).limit(1);
+      if (storeRows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
+      return detachStyleGroupFromStore(db, input.storeId, input.styleGroup, scope.products);
+    }),
+
+  /**
+   * Append-only counterpart to assignProducts. Adds the given productIds
+   * to the store as new storeProducts rows, leaving every existing
+   * binding untouched. Already-bound productIds are silently skipped.
+   *
+   * Used by the per-product detail page so the operator can drop a
+   * single not-yet-assigned color variant into the store without
+   * wiping the rest of the catalog.
+   *
+   * Optionally enqueues a render for each newly-added binding when
+   * `enqueueRender` is true. Render queueing here mirrors the lazy
+   * analysis hook in assignProducts: if placement isn't analyzed yet,
+   * analysis fires first and fan-out enqueues renders on success.
+   */
+  addStoreProductVariants: protectedProcedure
+    .input(
+      z.object({
+        storeId: z.number().int().positive(),
+        productIds: z.array(z.number().int().positive()).min(1),
+        enqueueRender: z.boolean().optional().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const scope = getOrgScope(ctx);
+
+      const storeRows = await db
+        .select()
+        .from(stores)
+        .where(and(eq(stores.id, input.storeId), scope.stores))
+        .limit(1);
+      if (storeRows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
+
+      // Already-bound productIds — skip these so the call is idempotent.
+      const existing = await db
+        .select({ productId: storeProducts.productId })
+        .from(storeProducts)
+        .where(and(
+          eq(storeProducts.storeId, input.storeId),
+          inArray(storeProducts.productId, input.productIds),
+        ));
+      const existingIds = new Set(existing.map(r => r.productId));
+      const newIds = input.productIds.filter(id => !existingIds.has(id));
+
+      if (newIds.length === 0) {
+        return { added: 0, skipped: input.productIds.length };
+      }
+
+      // Confirm the new productIds belong to the operator's org before
+      // inserting — keeps the FK insert from leaking cross-tenant rows.
+      const owned = await db
+        .select({ id: products.id })
+        .from(products)
+        .where(and(inArray(products.id, newIds), scope.products));
+      const ownedIds = new Set(owned.map(r => r.id));
+      const insertable = newIds.filter(id => ownedIds.has(id));
+      if (insertable.length === 0) {
+        return { added: 0, skipped: input.productIds.length };
+      }
+
+      // Compute starting sortOrder so new rows append at the end.
+      const sortRow = await db
+        .select({ max: sql<number>`COALESCE(MAX(${storeProducts.sortOrder}), -1)` })
+        .from(storeProducts)
+        .where(eq(storeProducts.storeId, input.storeId));
+      const startSort = (sortRow[0]?.max ?? -1) + 1;
+
+      const values: InsertStoreProduct[] = insertable.map((productId, i) => ({
+        storeId: input.storeId,
+        productId,
+        sortOrder: startSort + i,
+      }));
+      await db.insert(storeProducts).values(values);
+
+      // Lazy placement-analysis hook (matches assignProducts).
+      const unanalyzed = await db
+        .select({
+          id: products.id,
+          imageUrl: products.imageUrl,
+          webstoreImprintPlacementSource: products.webstoreImprintPlacementSource,
+          supplierCode: products.supplierCode,
+          name: products.name,
+        })
+        .from(products)
+        .where(and(
+          inArray(products.id, insertable),
+          isNull(products.webstoreImprintPlacementAnalyzedAt),
+          scope.products,
+        ));
+      for (const p of unanalyzed) {
+        void runAnalysisAndPersist(db, p, scope.products, false)
+          .then(result => {
+            if (result.status === "ok") {
+              void fanOutRenderForProduct(db, p.id);
+            }
+          })
+          .catch(err => {
+            log.warn(`addStoreProductVariants lazy analysis failed for product ${p.id}: ${err instanceof Error ? err.message : String(err)}`);
+          });
+      }
+
+      // Optional explicit render enqueue for already-analyzed products.
+      // For unanalyzed ones, fanOutRenderForProduct above already covers it.
+      if (input.enqueueRender) {
+        const analyzedIds = insertable.filter(id =>
+          !unanalyzed.find(u => u.id === id),
+        );
+        for (const productId of analyzedIds) {
+          void enqueueRenderForStoreProduct(db, input.storeId, productId)
+            .catch(err => {
+              log.warn(`addStoreProductVariants render enqueue failed for product ${productId}: ${err instanceof Error ? err.message : String(err)}`);
+            });
+        }
+      }
+
+      return {
+        added: insertable.length,
+        skipped: input.productIds.length - insertable.length,
+      };
+    }),
+
   updateStoreProduct: protectedProcedure
     .input(z.object({
       storeId: z.number(),
       productId: z.number(),
-      customPrice: z.string().optional(),
+      // null clears the override and reverts to the catalog basePrice.
+      customPrice: z.string().nullable().optional(),
       featured: z.boolean().optional(),
+      sortOrder: z.number().int().optional(),
+      trackInventory: z.boolean().optional(),
+      stockQuantity: z.number().int().nullable().optional(),
       // Empty array clears the restriction (visible to all divisions).
       divisionIds: z.array(z.number()).optional(),
     }))
@@ -174,6 +332,9 @@ export const storesCatalogRouter = router({
       const setObj: Record<string, unknown> = {};
       if (input.customPrice !== undefined) setObj.customPrice = input.customPrice;
       if (input.featured !== undefined) setObj.featured = input.featured;
+      if (input.sortOrder !== undefined) setObj.sortOrder = input.sortOrder;
+      if (input.trackInventory !== undefined) setObj.trackInventory = input.trackInventory;
+      if (input.stockQuantity !== undefined) setObj.stockQuantity = input.stockQuantity;
       if (input.divisionIds !== undefined) {
         setObj.divisionIds = input.divisionIds.length > 0 ? input.divisionIds : null;
       }

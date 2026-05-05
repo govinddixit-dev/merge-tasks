@@ -6,7 +6,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
   DollarSign, ShoppingCart, TrendingUp, TrendingDown, Users,
   ChevronRight, Sparkles,
@@ -15,13 +15,27 @@ import { trpc } from "@/lib/trpc";
 import { EffectiveStore, type StoreOrder, type DbStore } from "./StoreManagementTypes";
 import { StaggerGroup, StaggerItem } from "@/components/motion";
 
+// Compute a percent-change trend from the last two buckets in a series.
+// Returns null when there's no prior month to compare against (avoids
+// rendering a misleading +Infinity% when the previous bucket is zero).
+function computeTrend(series: number[]): { trend: string; up: boolean } | null {
+  if (series.length < 2) return null;
+  const prev = series[series.length - 2];
+  const curr = series[series.length - 1];
+  if (prev === 0) return null;
+  const pct = ((curr - prev) / prev) * 100;
+  const sign = pct >= 0 ? "+" : "";
+  return { trend: `${sign}${pct.toFixed(1)}%`, up: pct >= 0 };
+}
+
 // ─── Sparkline helper ─────────────────────────────────────────────────────────
 
 function Sparkline({ data, color }: { data: number[]; color: string }) {
+  const w = 80, h = 28;
+  if (data.length < 2) return <svg width={w} height={h} className="ml-auto" />;
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
-  const w = 80, h = 28;
   const points = data
     .map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`)
     .join(" ");
@@ -245,11 +259,52 @@ export function OverviewTab({
   setRecsExpanded,
   onViewAllOrders,
 }: OverviewTabProps) {
-  const kpis = [
-    { label: "Monthly GMV", value: effectiveStore.gmv, icon: <DollarSign size={16} />, trend: "+14%", up: true, spark: [62, 68, 74, 71, 78, 84] },
-    { label: "Monthly Orders", value: effectiveStore.monthlyOrders.toString(), icon: <ShoppingCart size={16} />, trend: "+8%", up: true, spark: [280, 295, 310, 305, 325, 342] },
-    { label: "Avg Order Value", value: effectiveStore.avgOrderValue, icon: <TrendingUp size={16} />, trend: "+2.3%", up: true, spark: [248, 252, 255, 258, 260, 261] },
-    { label: "Conversion Rate", value: effectiveStore.conversionRate, icon: <Users size={16} />, trend: "-0.4%", up: false, spark: [15.2, 14.8, 14.6, 14.4, 14.3, 14.2] },
+  // Real KPI time series — 6 months of monthly buckets. Disabled until we
+  // resolve a numeric storeId (string-id stub stores never query).
+  const kpiQuery = trpc.stores.kpiTimeSeries.useQuery(
+    { storeId: numericId, months: 6 },
+    { enabled: isNumeric && numericId > 0 },
+  );
+
+  const { gmvSpark, ordersSpark, aovSpark, gmvTrend, ordersTrend, aovTrend } = useMemo(() => {
+    const series = kpiQuery.data?.months ?? [];
+    const gmv = series.map(m => m.gmvCents / 100);
+    const orderCount = series.map(m => m.orderCount);
+    const aov = series.map(m => (m.orderCount > 0 ? m.gmvCents / 100 / m.orderCount : 0));
+    return {
+      gmvSpark: gmv,
+      ordersSpark: orderCount,
+      aovSpark: aov,
+      gmvTrend: computeTrend(gmv),
+      ordersTrend: computeTrend(orderCount),
+      aovTrend: computeTrend(aov),
+    };
+  }, [kpiQuery.data]);
+
+  type KpiCard = {
+    label: string;
+    value: string;
+    icon: React.ReactNode;
+    trend: { trend: string; up: boolean } | null;
+    spark: number[];
+    /** When true, render "—" trend + no sparkline + tooltip on the label. */
+    noData?: boolean;
+    noDataTooltip?: string;
+  };
+
+  const kpis: KpiCard[] = [
+    { label: "Monthly GMV", value: effectiveStore.gmv, icon: <DollarSign size={16} />, trend: gmvTrend, spark: gmvSpark },
+    { label: "Monthly Orders", value: effectiveStore.monthlyOrders.toString(), icon: <ShoppingCart size={16} />, trend: ordersTrend, spark: ordersSpark },
+    { label: "Avg Order Value", value: effectiveStore.avgOrderValue, icon: <TrendingUp size={16} />, trend: aovTrend, spark: aovSpark },
+    {
+      label: "Conversion Rate",
+      value: effectiveStore.conversionRate,
+      icon: <Users size={16} />,
+      trend: null,
+      spark: [],
+      noData: true,
+      noDataTooltip: "Visit tracking not yet enabled",
+    },
   ];
 
   return (
@@ -260,7 +315,12 @@ export function OverviewTab({
           <StaggerItem key={kpi.label}>
           <div className="bg-white rounded-lg border border-mt-border p-5">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-semibold text-mt-ink-4 uppercase tracking-wider">{kpi.label}</span>
+              <span
+                className="text-[11px] font-semibold text-mt-ink-4 uppercase tracking-wider"
+                title={kpi.noDataTooltip}
+              >
+                {kpi.label}
+              </span>
               <span className="w-8 h-8 rounded-lg bg-mt-brand-light flex items-center justify-center text-primary">
                 {kpi.icon}
               </span>
@@ -269,16 +329,29 @@ export function OverviewTab({
               <div>
                 <span className="text-[24px] font-bold text-mt-ink data-mono">{kpi.value}</span>
                 <div className="flex items-center gap-1 mt-1">
-                  {kpi.up
-                    ? <TrendingUp size={11} className="text-[#16A34A]" />
-                    : <TrendingDown size={11} className="text-[#EF4444]" />}
-                  <span className={`text-[11px] font-semibold ${kpi.up ? "text-[#16A34A]" : "text-[#EF4444]"}`}>
-                    {kpi.trend}
-                  </span>
-                  <span className="text-[11px] text-mt-ink-4">vs last month</span>
+                  {kpi.trend ? (
+                    <>
+                      {kpi.trend.up
+                        ? <TrendingUp size={11} className="text-[#16A34A]" />
+                        : <TrendingDown size={11} className="text-[#EF4444]" />}
+                      <span className={`text-[11px] font-semibold ${kpi.trend.up ? "text-[#16A34A]" : "text-[#EF4444]"}`}>
+                        {kpi.trend.trend}
+                      </span>
+                      <span className="text-[11px] text-mt-ink-4">vs last month</span>
+                    </>
+                  ) : (
+                    <span
+                      className="text-[11px] font-semibold text-mt-ink-4"
+                      title={kpi.noDataTooltip}
+                    >
+                      —
+                    </span>
+                  )}
                 </div>
               </div>
-              <Sparkline data={kpi.spark} color={kpi.up ? "#16A34A" : "#EF4444"} />
+              {!kpi.noData && (
+                <Sparkline data={kpi.spark} color={kpi.trend?.up === false ? "#EF4444" : "#16A34A"} />
+              )}
             </div>
           </div>
           </StaggerItem>

@@ -6,7 +6,7 @@
  * Design: Apple/Stripe/Wise enterprise aesthetic — generous whitespace,
  * refined typography, subtle motion, premium card treatments.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Package, Sparkles, Info, Loader2, AlertTriangle,
@@ -15,6 +15,8 @@ import {
   Warehouse, RefreshCw
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { colorNameToHex } from "@/lib/colorMap";
+import { dedupeAndSortVariants } from "@/lib/variantUtils";
 import ImprintZoneEditor from "@/components/product/ImprintZoneEditor";
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -42,6 +44,7 @@ const ANIM = `
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes scaleIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 `;
 
 /* ── ProductImage with graceful fallback ───────────────────────────────── */
@@ -57,7 +60,16 @@ function ProductImage({ src, alt, className, iconSize = 48 }: {
       </div>
     );
   }
-  return <img src={src} alt={alt} className={className} onError={() => setBroken(true)} />;
+  return (
+    <img
+      key={src}
+      src={src}
+      alt={alt}
+      className={className}
+      style={{ animation: "fadeIn 200ms ease-out" }}
+      onError={() => setBroken(true)}
+    />
+  );
 }
 
 /* ── Pill badge ────────────────────────────────────────────────────────── */
@@ -208,11 +220,31 @@ export default function ProductDetail() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"details" | "pricing" | "decoration" | "zones">("details");
+  const [swatchExpanded, setSwatchExpanded] = useState(false);
 
   const { data: product, isLoading, error } = trpc.products.getById.useQuery(
     { id: productId },
-    { enabled: productId > 0 }
+    { enabled: productId > 0, placeholderData: (prev) => prev },
   );
+
+  // Phase 8 — fetch sibling color variants when this product belongs to
+  // a styleGroup. Skipped for ungrouped (manual) products.
+  const { data: groupData } = trpc.products.getByStyleGroup.useQuery(
+    { styleGroup: product?.styleGroup ?? "" },
+    { enabled: !!product?.styleGroup, placeholderData: (prev) => prev },
+  );
+  const siblingVariants = groupData?.variants ?? [];
+  const dedupedVariants = useMemo(
+    () => dedupeAndSortVariants(siblingVariants, productId),
+    [siblingVariants, productId],
+  );
+  const SWATCH_LIMIT = 8;
+  const visibleSwatches = swatchExpanded
+    ? dedupedVariants
+    : dedupedVariants.slice(0, SWATCH_LIMIT);
+  const hiddenCount = Math.max(0, dedupedVariants.length - SWATCH_LIMIT);
+  const currentVariant = dedupedVariants.find(v => v.productId === productId)
+    ?? siblingVariants.find(v => v.productId === productId);
 
   useEffect(() => {
     if (product?.imageUrl) setSelectedImage(product.imageUrl);
@@ -313,7 +345,7 @@ export default function ProductDetail() {
               <ProductImage
                 src={selectedImage}
                 alt={product.name}
-                className="max-w-full max-h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+                className="max-w-full max-h-full object-contain transition-all duration-150 ease-out group-hover:scale-[1.02]"
                 iconSize={56}
               />
               {selectedImage && (
@@ -342,6 +374,63 @@ export default function ProductDetail() {
                   <img src={img.url} alt={img.label} className="w-full h-full object-contain p-1.5" />
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Phase 8 — color variant selector. Only renders when this
+              product has siblings in its styleGroup. Selecting a color
+              navigates to that variant's PDP and swaps the main image. */}
+          {siblingVariants.length > 1 && dedupedVariants.length > 0 && (
+            <div className="bg-white rounded-3xl border border-[#F0F0F2] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-[0.05em] mb-3">
+                Color · {dedupedVariants.length}
+              </p>
+              <div
+                className="flex flex-wrap gap-2 p-1 overflow-hidden transition-[max-height] duration-300 ease-out"
+                style={{ maxHeight: swatchExpanded ? 2000 : 400 }}
+              >
+                {visibleSwatches.map(v => {
+                  const thumb = v.imageUrl;
+                  const hex = v.colorHex ?? colorNameToHex(v.colorName);
+                  const isCurrent = v.productId === productId;
+                  return (
+                    <button
+                      key={v.productId}
+                      onClick={() => navigate(`/curation/product/${v.productId}`)}
+                      title={v.colorName ?? "Variant"}
+                      aria-label={v.colorName ?? "Variant"}
+                      className={`w-12 h-12 rounded-lg overflow-hidden cursor-pointer border border-mt-border transition-transform duration-150 hover:scale-105 ${
+                        isCurrent
+                          ? "ring-2 ring-offset-2 ring-primary"
+                          : "hover:ring-1 hover:ring-offset-1 hover:ring-mt-ink-3"
+                      }`}
+                    >
+                      {thumb ? (
+                        <img src={thumb} alt={v.colorName ?? "Variant"} className="w-full h-full object-cover" />
+                      ) : hex ? (
+                        <div className="w-full h-full" style={{ backgroundColor: hex }} />
+                      ) : (
+                        <div className="w-full h-full bg-mt-surface-2 text-mt-ink-3 text-xs font-semibold flex items-center justify-center">?</div>
+                      )}
+                    </button>
+                  );
+                })}
+                {!swatchExpanded && hiddenCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSwatchExpanded(true)}
+                    aria-label={`Show ${hiddenCount} more colors`}
+                    className="w-12 h-12 rounded-lg bg-mt-surface-2 border border-mt-border text-[11px] font-semibold text-mt-ink-3 flex items-center justify-center cursor-pointer hover:border-mt-ink-3 transition-colors"
+                  >
+                    +{hiddenCount}
+                  </button>
+                )}
+              </div>
+              {currentVariant?.colorName && (
+                <p className="text-sm font-medium text-mt-ink-2 mt-3">
+                  Color: {currentVariant.colorName}
+                </p>
+              )}
             </div>
           )}
 

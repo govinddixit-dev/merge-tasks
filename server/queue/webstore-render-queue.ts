@@ -53,6 +53,16 @@ export const WEBSTORE_RENDER_CONCURRENCY = 5;
 export type WebstoreRenderJob = NanoBananaRenderInput & {
   productId: number;
   storeId: number;
+  /**
+   * Phase 7+ — placement editor "Save as Photorealistic Render" path.
+   * When set, the worker auto-approves on success: writes
+   * renderApproved=true + renderApprovedBy=approvedBy alongside the
+   * normal renderUrl write, instead of leaving the row unapproved for
+   * a manual approve click. The flag does not affect the prompt — it
+   * only changes the post-success DB write. Distributor accepts the AI
+   * output sight-unseen in exchange for one-click finality.
+   */
+  autoApprove?: { approvedBy: number };
 };
 
 /**

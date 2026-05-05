@@ -219,6 +219,47 @@ describe("Security — Authentication Guards (all protected endpoints)", () => {
     const plans = await caller.billing.getPlans();
     expect(plans.length).toBeGreaterThan(0);
   });
+
+  it("stores.getBySlug projection does not leak internal render fields (audit)", async () => {
+    // Source-level audit: storesCrud.getBySlug constructs an explicit
+    // object literal for `products` (see server/routers/storesCrud.ts:583-606).
+    // This test pins that whitelist — if a future edit accidentally
+    // spreads `...sp` or adds a leak-prone column the diff fails here.
+    const fs = await import("fs");
+    const path = await import("path");
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), "server/routers/storesCrud.ts"),
+      "utf-8",
+    );
+
+    // Find the getBySlug body (rough but stable: from the procedure
+    // declaration to the closing }) of the .query() block).
+    const start = src.indexOf("getBySlug: publicProcedure");
+    expect(start).toBeGreaterThan(-1);
+    const slice = src.slice(start, start + 8000);
+
+    // Internal-only fields that must NEVER appear in the public
+    // webstore response. renderApproved is a distributor-only flag;
+    // renderPromptAdjustment is the AI-prompt tweak; renderPlacement*
+    // coords are the manual placement editor's data — none of these
+    // are useful to a customer and all reveal distributor state.
+    const FORBIDDEN = [
+      "renderApproved:",
+      "renderApprovedAt:",
+      "renderApprovedBy:",
+      "renderPromptAdjustment:",
+      "renderPlacementX:",
+      "renderPlacementY:",
+      "renderPlacementWidth:",
+      "renderPlacementHeight:",
+      "renderPlacementRotation:",
+    ];
+    for (const field of FORBIDDEN) {
+      // The field can appear in the file (it exists on the schema);
+      // it must not appear inside the getBySlug response slice.
+      expect(slice).not.toContain(field);
+    }
+  });
 });
 
 // ─── Rate Limiter Tests ───────────────────────────────────────────────────────

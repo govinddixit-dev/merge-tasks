@@ -151,6 +151,16 @@ function convertMessage(msg: Message): AnthropicMessage {
           source: { type: "url" as const, url: part.image_url.url },
         };
       }
+      if (part.type === "image_base64") {
+        return {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: part.image_base64.media_type,
+            data: part.image_base64.data,
+          },
+        };
+      }
       // file_url — treat as text reference
       return {
         type: "text" as const,

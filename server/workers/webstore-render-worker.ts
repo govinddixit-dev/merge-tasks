@@ -80,6 +80,20 @@ async function processRenderJob(
     throw new Error(`render failed (${result.reason}): ${result.error ?? "no detail"}`);
   }
 
+  // Phase 7 — every new render lands as unapproved by default. The
+  // distributor must explicitly approve in the Render Manager before
+  // customers see it. Existing approval state is overwritten (a fresh
+  // render invalidates a prior approval — the image changed, so prior
+  // consent doesn't carry). renderApprovedAt/By are reset for the same
+  // reason; renderOverrideUrl is left untouched so a manual override
+  // survives an AI re-render. renderPromptAdjustment is also untouched
+  // — it's the durable preference.
+  //
+  // Phase 7+ — autoApprove path: when the placement editor's "Save as
+  // Photorealistic Render" button enqueued this job, approve on success.
+  // The distributor opted in to one-click finality at click time, so we
+  // skip the explicit approve step.
+  const auto = job.data.autoApprove;
   await db
     .update(storeProducts)
     .set({
@@ -88,6 +102,9 @@ async function processRenderJob(
       webstoreRenderDecoration: job.data.decorationMethod,
       webstoreRenderStatus: "complete",
       webstoreRenderModel: result.modelUsed,
+      renderApproved: !!auto,
+      renderApprovedAt: auto ? new Date() : null,
+      renderApprovedBy: auto ? auto.approvedBy : null,
     })
     .where(
       and(

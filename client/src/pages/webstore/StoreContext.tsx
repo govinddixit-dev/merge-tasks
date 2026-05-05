@@ -152,6 +152,35 @@ export interface StoreData {
   }>;
   client: { companyName: string; industry?: string | null; website?: string | null; logoUrl?: string | null } | null;
   products: StoreProduct[];
+  // Phase 8 — variant-grouped projection. Same data as `products`, bucketed
+  // by styleGroup with per-variant render URLs already gated by approval.
+  // Webstore grid + PDP read this; legacy iterators continue to use
+  // `products`. Optional for backward compat with cached store payloads.
+  // `primary` mirrors the server's raw products row — only the subset
+  // used by the card surface is typed here.
+  productGroups?: Array<{
+    styleGroup: string;
+    primary: {
+      id: number;
+      name: string;
+      sku: string | null;
+      category: string | null;
+      basePrice: string | null;
+      imageUrl: string | null;
+      type: "promotional" | "print" | null;
+    };
+    primaryStoreProductId: number | null;
+    variants: Array<{
+      productId: number;
+      storeProductId: number | null;
+      colorName: string | null;
+      colorHex: string | null;
+      swatchUrl: string | null;
+      imageUrl: string | null;
+      webstoreRenderedImageUrl: string | null;
+    }>;
+    variantCount: number;
+  }>;
 }
 
 /**

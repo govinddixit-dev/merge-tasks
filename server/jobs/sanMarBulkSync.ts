@@ -17,6 +17,7 @@ import { SanMarBulkService, sanMarBulkService } from "../integrations/SanMarBulk
 import type { PSRestfulProduct } from "../integrations/PSRestfulService";
 import { resolveSanMarCredentials } from "../integrations/sanMarCredentialResolver";
 import { getLogger } from "../utils/logger";
+import { deriveStyleGroupSlug, extractColorNameFromSanMarUrl } from "../utils/styleGroup";
 
 const log = getLogger("sanmar-sync");
 
@@ -125,6 +126,16 @@ async function upsertCatalogForSupplier(
         .where(where)
         .limit(1);
 
+      // styleGroup grouping policy — supplier-agnostic, see styleGroup.ts.
+      //   SanMar: derived from product name (no true style number in bulk feed)
+      //   S&S:    TBD — map their styleNumber here when integrated
+      //   ASI:    TBD
+      // The first variant inserted for a styleGroup is NOT auto-marked primary;
+      // the backfill job (jobs/backfillStyleGroups.ts) re-runs to keep
+      // primaries consistent across new ingest.
+      const derivedSlug = deriveStyleGroupSlug(p.productName) || null;
+      const derivedColor = extractColorNameFromSanMarUrl(p.imageUrl ?? null);
+
       if (existing) {
         await db.update(products)
           .set({
@@ -133,6 +144,9 @@ async function upsertCatalogForSupplier(
             imageUrl: p.imageUrl ?? null,
             supplierCode: supplier.normalizedName,
             externalSource: "promostandards",
+            styleGroup: derivedSlug,
+            colorName: derivedColor,
+            swatchUrl: p.imageUrl ?? null,
           })
           .where(eq(products.id, existing.id));
         updated++;
@@ -158,6 +172,9 @@ async function upsertCatalogForSupplier(
           imageUrl: p.imageUrl ?? null,
           basePrice: "0.00",
           source: "promostandards",
+          styleGroup: derivedSlug,
+          colorName: derivedColor,
+          swatchUrl: p.imageUrl ?? null,
         };
         log.info(`SanMar upsert: INSERT payload for ${p.productId}: ${JSON.stringify(values)} (raw: ${JSON.stringify(p)})`);
         await db.insert(products).values(values);

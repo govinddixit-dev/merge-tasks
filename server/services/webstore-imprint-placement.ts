@@ -53,6 +53,7 @@
 
 import { eq, and, inArray, ne, isNull, type SQL } from "drizzle-orm";
 import pLimit from "p-limit";
+import sharp from "sharp";
 import { invokeAnthropic } from "../_core/anthropicAdapter";
 import { products } from "../../drizzle/schema";
 import type { getDb } from "../db";
@@ -64,6 +65,18 @@ const log = getLogger("webstore-imprint-placement");
 
 /** Hard cap on each LLM stage so a slow vision response never blocks ingestion. */
 const ANALYSIS_TIMEOUT_MS = 15_000;
+
+/**
+ * Image pre-fetch + resize budget. SanMar product images can be 3-5 MB
+ * 3000px-wide PNGs; sending them by URL pushed Stage 1 past the 15s cap
+ * because Anthropic re-encodes large inputs internally. Pre-fetching here
+ * lets us downscale to vision-model-effective resolution (~1024px wide is
+ * past the diminishing-returns point for placement analysis) and inline
+ * the smaller payload as base64. Cuts wall time roughly in half on the
+ * problem images and shrinks per-call cost.
+ */
+const IMAGE_FETCH_TIMEOUT_MS = 8_000;
+const IMAGE_MAX_WIDTH_PX = 1024;
 
 /**
  * Model used for vision analysis. Sonnet over Haiku because vision JSON
@@ -134,6 +147,41 @@ export interface PlacementResult {
 }
 
 /**
+ * Fetch and downscale a product image for vision analysis. Returns
+ * base64 + mediaType ready to drop into an Anthropic image content
+ * block, or null on any failure (fetch timeout, decode error). Keeps
+ * the wider analyzer in line with its "never throw" contract.
+ */
+async function prepareImageForAnalysis(
+  imageUrl: string,
+  productId?: number,
+): Promise<{ data: string; mediaType: string } | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+  try {
+    const resp = await fetch(imageUrl, { signal: controller.signal });
+    if (!resp.ok) {
+      log.warn(`prepareImageForAnalysis fetch ${resp.status} (productId=${productId}): ${imageUrl}`);
+      return null;
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const resized = await sharp(buf)
+      .rotate()
+      .resize({ width: IMAGE_MAX_WIDTH_PX, withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    return { data: resized.toString("base64"), mediaType: "image/jpeg" };
+  } catch (err) {
+    log.warn(
+      `prepareImageForAnalysis failed (productId=${productId}): ${err instanceof Error ? err.message : String(err)} — url=${imageUrl}`,
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Analyze a single product image. Returns null on any failure (timeout,
  * rate limit, malformed JSON, schema validation reject).
  *
@@ -145,6 +193,7 @@ export async function analyzeProductImage(
   imageUrl: string,
   productId?: number,
 ): Promise<PlacementResult | null> {
+  const startedAt = Date.now();
   if (!imageUrl || !/^https?:\/\//.test(imageUrl)) {
     log.warn(`analyzeProductImage skipped — invalid URL (productId=${productId}): ${imageUrl}`);
     return null;
@@ -155,6 +204,13 @@ export async function analyzeProductImage(
     log.warn(`analyzeProductImage skipped — ANTHROPIC_API_KEY not set (productId=${productId})`);
     return null;
   }
+
+  const prepared = await prepareImageForAnalysis(imageUrl, productId);
+  if (!prepared) return null;
+  const imageBlock = {
+    type: "image_base64" as const,
+    image_base64: { media_type: prepared.mediaType, data: prepared.data },
+  };
   const baseCfg = {
     provider: ANALYSIS_PROVIDER,
     apiUrl: "https://api.anthropic.com/v1/messages",
@@ -193,7 +249,7 @@ export async function analyzeProductImage(
               role: "user",
               content: [
                 { type: "text", text: stage1Prompt },
-                { type: "image_url", image_url: { url: imageUrl } },
+                imageBlock,
               ],
             },
           ],
@@ -261,7 +317,7 @@ export async function analyzeProductImage(
               role: "user",
               content: [
                 { type: "text", text: stage2Prompt },
-                { type: "image_url", image_url: { url: imageUrl } },
+                imageBlock,
               ],
             },
           ],
@@ -285,7 +341,9 @@ export async function analyzeProductImage(
     return null;
   }
 
-  return parseAndValidate(raw, productId, imageUrl);
+  const result = parseAndValidate(raw, productId, imageUrl);
+  log.info(`[placement-analysis] completed in ${Date.now() - startedAt}ms for product ${productId}`);
+  return result;
 }
 
 /** Pull the first text chunk from an Anthropic-shaped envelope. */

@@ -116,33 +116,33 @@ interface WebstoreLogoOverlayProps {
    */
   placement: WebstorePlacement | null;
   /**
-   * Step 6 — photorealistic nano-banana rendered image URL from
-   * storeProducts.webstoreRenderedImageUrl (per-binding, post-0099).
-   * When non-null AND the user is in
-   * Branded mode, this image overlays the CSS composite once it loads.
+   * Photorealistic image to display (override > AI render). Pre-gated
+   * upstream by Phase 7 approval logic in storesCrud.getBySlug — the
+   * caller passes null whenever the distributor has not approved the
+   * render, and this component renders the CSS logo composite as the
+   * customer-facing fallback. The component itself stays approval-
+   * agnostic: a non-null URL means "show this".
+   *
+   * When non-null this image overlays the CSS composite once it loads.
    * On load failure (onError), the CSS composite below remains visible.
-   * Null means no render yet → CSS composite is the only layer.
    */
   renderedImageUrl?: string | null;
   /** Alt text for the product image. */
   alt?: string;
   /** CSS classes applied to the outermost wrapper. */
   className?: string;
-  /** Render the Branded / Blank toggle pill (PDP only). Default false. */
-  showToggle?: boolean;
-  /** Store primary color — tints the toggle and the BRANDED badge. */
+  /** Store primary color — tints the BRANDED badge on cards. */
   primaryColor?: string;
 }
 
 /**
- * WebstoreLogoOverlayCard — lightweight card variant. No toggle, no
- * primary color tint. Same coordinate-space contract as the full
- * component.
+ * WebstoreLogoOverlayCard — lightweight card variant. No primary color
+ * tint. Same coordinate-space contract as the full component.
  */
 export function WebstoreLogoOverlayCard(
-  props: Omit<WebstoreLogoOverlayProps, "showToggle" | "primaryColor">,
+  props: Omit<WebstoreLogoOverlayProps, "primaryColor">,
 ) {
-  return <WebstoreLogoOverlay {...props} showToggle={false} />;
+  return <WebstoreLogoOverlay {...props} />;
 }
 
 export default function WebstoreLogoOverlay({
@@ -153,10 +153,8 @@ export default function WebstoreLogoOverlay({
   renderedImageUrl = null,
   alt = "",
   className = "",
-  showToggle = false,
   primaryColor = "#6C2BD9",
 }: WebstoreLogoOverlayProps) {
-  const [branded, setBranded] = useState(true);
   // Photoreal layer load state. We render the photoreal <img> in the
   // DOM as soon as a URL is available so the browser can start fetching,
   // but keep it visually hidden until onLoad fires — that prevents a
@@ -198,14 +196,12 @@ export default function WebstoreLogoOverlay({
     }
   }, [productId, productImageUrl, logoUrl, placement]);
 
-  const showLogo = branded && !!logoUrl && !!placement;
-  // Photoreal shows only when: a URL exists, the browser successfully
-  // loaded it, and the user is in Branded mode. In Blank mode the
-  // photoreal hides alongside the CSS logo composite — "Blank" means
-  // bare product image, no decoration whatsoever (matches pre-Step-6
-  // toggle semantics).
+  const showLogo = !!logoUrl && !!placement;
+  // Photoreal shows when a URL exists and the browser successfully loaded
+  // it. The Blank toggle was removed — customers always see the branded
+  // composite (photoreal if available, CSS overlay otherwise).
   const showPhotoreal =
-    branded && !!renderedImageUrl && photorealLoaded && !photorealFailed;
+    !!renderedImageUrl && photorealLoaded && !photorealFailed;
   // The CSS-composite logo layer doubles as the during-load and on-error
   // fallback for the photoreal. Once the photoreal has loaded it MUST
   // disappear — otherwise the CSS logo bleeds through anti-aliased alpha
@@ -254,7 +250,7 @@ export default function WebstoreLogoOverlay({
                 hidden until onLoad. Sits absolutely over the same inner
                 box so the CSS composite below shows through during load
                 and after a load failure. */}
-            {branded && renderedImageUrl && !photorealFailed && (
+            {renderedImageUrl && !photorealFailed && (
               <img
                 ref={photorealImgRef}
                 src={renderedImageUrl}
@@ -275,43 +271,10 @@ export default function WebstoreLogoOverlay({
         </div>
       )}
 
-      {/* Branded / Blank toggle — PDP only. Positioned relative to the
-          outer wrapper (not the inner image box) so it stays anchored
-          to the card frame regardless of image aspect. */}
-      {showToggle && logoUrl && placement && (
-        <div
-          className="absolute top-3 left-3 flex rounded-full overflow-hidden shadow-md z-10"
-          style={{ border: `1.5px solid ${primaryColor}20` }}
-        >
-          <button
-            onClick={() => setBranded(true)}
-            className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors"
-            style={{
-              backgroundColor: branded ? primaryColor : "rgba(255,255,255,0.92)",
-              color: branded ? "#fff" : "#555",
-            }}
-            aria-pressed={branded}
-          >
-            Branded
-          </button>
-          <button
-            onClick={() => setBranded(false)}
-            className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors"
-            style={{
-              backgroundColor: !branded ? primaryColor : "rgba(255,255,255,0.92)",
-              color: !branded ? "#fff" : "#555",
-            }}
-            aria-pressed={!branded}
-          >
-            Blank
-          </button>
-        </div>
-      )}
-
-      {/* "BRANDED" badge on cards when overlay is active and no toggle.
-          Shows whenever EITHER decoration layer is producing output —
-          the photoreal-active state still warrants the badge. */}
-      {!showToggle && (showCssLogo || showPhotoreal) && (
+      {/* "BRANDED" badge — shows whenever EITHER decoration layer is
+          producing output. The Branded/Blank toggle was removed;
+          customers always see the branded composite. */}
+      {(showCssLogo || showPhotoreal) && (
         <span
           className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider text-white shadow-sm pointer-events-none"
           style={{ backgroundColor: `${primaryColor}CC` }}

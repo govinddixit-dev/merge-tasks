@@ -14,7 +14,7 @@ interface Step4DivisionsProps {
 
 function newId() {
   try {
-    return globalThis.crypto.randomUUID();
+    return crypto.randomUUID();
   } catch {
     return `d-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   }

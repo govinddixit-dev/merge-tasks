@@ -14,7 +14,7 @@
  * here. Anything beyond bootstrapping is a code smell.
  */
 
-import "../envBootstrap";
+import "dotenv/config";
 import { createWebstoreRenderWorker } from "./webstore-render-worker";
 import { redisConnection } from "../queue/redisClient";
 import { assertEvictionPolicy } from "../queue/assertEvictionPolicy";
@@ -60,6 +60,13 @@ async function bootstrap() {
 
   worker = createWebstoreRenderWorker();
   log.info("webstore-render-worker started");
+
+  // Health monitor — process-tagged "worker" so the analyzer can split
+  // memory trends per process. Worker tick skips MySQL + queue-depth
+  // collection (those are sampled by the main process) to avoid
+  // double-counting shared resources.
+  const { startHealthMonitor } = await import("../services/health-monitor");
+  startHealthMonitor("worker");
 }
 
 let shuttingDown = false;

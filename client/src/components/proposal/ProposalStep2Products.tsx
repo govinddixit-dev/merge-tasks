@@ -1,9 +1,14 @@
 /**
  * ProposalStep2Products
- * Step 2 of the Create Proposal wizard — Product selection
+ * Phase 8 — variant-grouped product picker. Browses one card per styleGroup
+ * with color swatches; selecting a card adds ALL its variant productIds. A
+ * "Selected" panel below renders one row per picked variant with a quantity
+ * editor and the optional Set Pricing trigger.
  */
 
-import { Search, Printer, DollarSign } from "lucide-react";
+import React from "react";
+import { Printer, DollarSign, X } from "lucide-react";
+import { GroupedProductGrid } from "@/components/products/GroupedProductGrid";
 
 interface Product {
   id: number;
@@ -23,88 +28,140 @@ interface Props {
   toggleProduct: (id: number) => void;
   setQuantities: React.Dispatch<React.SetStateAction<Record<number, number>>>;
   totalValue: number;
-  /**
-   * DB id of the selected existing client. When null/undefined the Set Pricing
-   * affordance is omitted — new-client proposals can't have client-specific
-   * pricing configured until the client row is persisted.
-   */
   clientDbId?: number | null;
-  /** Opens the PriceMatrixModal for the given product. Required when clientDbId is set. */
   onOpenPriceMatrix?: (product: Product) => void;
 }
 
 export default function ProposalStep2Products({
-  filteredProducts, selectedProducts, quantities,
-  productSearch, setProductSearch, toggleProduct, setQuantities, totalValue,
-  clientDbId, onOpenPriceMatrix,
+  filteredProducts,
+  selectedProducts,
+  quantities,
+  toggleProduct,
+  setQuantities,
+  totalValue,
+  clientDbId,
+  onOpenPriceMatrix,
 }: Props) {
+  const selectedIds = React.useMemo(
+    () => Array.from(selectedProducts),
+    [selectedProducts],
+  );
+
+  // The grid emits a full replacement set; diff against the current Set
+  // and call toggleProduct for each id that flipped. This keeps the
+  // parent's Set state and quantity-default logic untouched.
+  function applySelection(next: number[]) {
+    const nextSet = new Set(next);
+    const toAdd: number[] = [];
+    const toRemove: number[] = [];
+    for (const id of next) if (!selectedProducts.has(id)) toAdd.push(id);
+    selectedProducts.forEach((id) => {
+      if (!nextSet.has(id)) toRemove.push(id);
+    });
+    [...toAdd, ...toRemove].forEach((id) => toggleProduct(id));
+  }
+
+  // Selected list — pull from filteredProducts (which is mergedProducts
+  // upstream) so we keep names/prices/images. Variants outside of the
+  // current category filter still render here so the user always sees
+  // their selections.
+  const productById = new Map(filteredProducts.map((p) => [p.id, p]));
+  const selectedRows = selectedIds
+    .map((id) => productById.get(id))
+    .filter(Boolean) as Product[];
+
   return (
-    <div className="bg-white rounded-xl border border-mt-border p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-[18px] font-bold text-mt-ink mb-1">Select Products</h2>
-          <p className="text-[13px] text-mt-ink-3">{selectedProducts.size} selected · ${totalValue.toLocaleString()} est. value</p>
+    <div className="space-y-6">
+      <section className="bg-white rounded-xl border border-mt-border p-6 sm:p-8 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-[18px] font-semibold text-mt-ink mb-1">
+              Select Products
+            </h2>
+            <p className="text-[13px] text-mt-ink-3">
+              {selectedIds.length} variant{selectedIds.length === 1 ? "" : "s"} selected
+              {" · "}${totalValue.toLocaleString()} est. value
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-mt-surface rounded-lg border border-mt-border">
-        <Search size={14} className="text-mt-ink-4" />
-        <input className="flex-1 text-[13px] outline-none bg-transparent" placeholder="Search products..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {filteredProducts.map((p) => {
-          const isSelected = selectedProducts.has(p.id);
-          return (
-            <button key={p.id} onClick={() => toggleProduct(p.id)} className={`p-3 rounded-xl border-2 text-left transition-all ${isSelected ? "border-primary bg-mt-brand-light/50" : "border-mt-border hover:border-mt-border-2"}`}>
-              {p.image ? (
-                <div className="w-full h-20 mb-2 flex items-center justify-center bg-[#F8F8FA] rounded-lg p-2">
-                  <img src={p.image} alt={p.name} className="h-full object-contain" />
+
+        <GroupedProductGrid
+          selectedIds={selectedIds}
+          onChange={applySelection}
+          showSearch
+          emptyTitle="No products in your catalog yet"
+          emptyDescription="Import or create catalog products before adding them to a proposal."
+        />
+      </section>
+
+      {selectedRows.length > 0 && (
+        <section className="bg-white rounded-xl border border-mt-border p-6 sm:p-8">
+          <h3 className="text-[15px] font-semibold text-mt-ink mb-4">
+            Selected variants
+          </h3>
+          <div className="space-y-2">
+            {selectedRows.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-3 p-3 rounded-xl border border-mt-border bg-white hover:bg-mt-surface-1 transition-colors duration-150"
+              >
+                {p.image ? (
+                  <img
+                    src={p.image}
+                    alt={p.name}
+                    draggable={false}
+                    className="h-10 w-10 rounded-md border border-mt-border object-cover bg-mt-surface-2 shrink-0"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded-md border border-mt-border bg-mt-surface-2 flex items-center justify-center shrink-0">
+                    <Printer size={14} className="text-primary/70" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-mt-ink truncate">
+                    {p.name}
+                  </p>
+                  <p className="text-[11px] text-mt-ink-4">
+                    ${p.price} · {p.supplier}
+                  </p>
                 </div>
-              ) : (
-                <div className="w-full h-20 mb-2 flex items-center justify-center bg-gradient-to-br from-[#F5F3FF] to-[#EEF2FF] rounded-lg">
-                  <Printer size={20} className="text-primary" />
-                </div>
-              )}
-              <p className="text-[11px] font-semibold text-mt-ink truncate">{p.name}</p>
-              <p className="text-[10px] text-mt-ink-4">${p.price} · {p.supplier}</p>
-              {isSelected && (
-                <div className="mt-2 flex items-center gap-2">
-                  <label className="text-[9px] text-mt-ink-3">Qty:</label>
+                <div className="flex items-center gap-2 shrink-0">
+                  <label className="text-[11px] text-mt-ink-3">Qty</label>
                   <input
                     type="number"
-                    className="w-16 px-2 py-1 text-[11px] border border-mt-border rounded"
+                    min={1}
+                    className="w-20 px-2 py-1.5 text-[12px] font-mono border border-mt-border rounded-md outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-150"
                     value={quantities[p.id] || 100}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      setQuantities(prev => ({ ...prev, [p.id]: parseInt(e.target.value) || 0 }));
-                    }}
-                  />
-                </div>
-              )}
-              {isSelected && clientDbId != null && onOpenPriceMatrix && (
-                // role=button on a <div> so we can nest inside the card's outer
-                // <button> without producing invalid HTML. stopPropagation keeps
-                // the outer toggle from firing when the user clicks this trigger.
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); onOpenPriceMatrix(p); }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onOpenPriceMatrix(p);
+                    onChange={(e) =>
+                      setQuantities((prev) => ({
+                        ...prev,
+                        [p.id]: parseInt(e.target.value, 10) || 0,
+                      }))
                     }
-                  }}
-                  className="mt-2 bg-[#F0EEFF] text-primary hover:bg-[#E5DCFF] px-2 py-1 rounded-lg text-[11px] font-medium inline-flex items-center gap-1 transition-colors active:scale-[0.97] cursor-pointer w-fit"
-                >
-                  <DollarSign size={11} /> Set Pricing
+                  />
+                  {clientDbId != null && onOpenPriceMatrix && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenPriceMatrix(p)}
+                      className="inline-flex items-center gap-1 bg-mt-brand-light text-primary hover:bg-[#E5DCFF] px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-colors duration-150"
+                    >
+                      <DollarSign size={11} /> Set Pricing
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleProduct(p.id)}
+                    aria-label="Remove variant"
+                    className="text-mt-ink-4 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-colors duration-150"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

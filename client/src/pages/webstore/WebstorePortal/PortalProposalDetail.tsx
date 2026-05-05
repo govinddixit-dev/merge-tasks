@@ -2,16 +2,23 @@
  * PortalProposalDetail.tsx
  * ─────────────────────────────────────────────────────────────────────────────
  * Full-screen detail view for a single portal proposal. Supports:
- *  - Multi-department approval tracker with per-dept status pills
- *  - Edit mode: add/remove products, adjust quantities
+ *  - Multi-department approval tracker (sourced from storePortal.proposals.getById)
+ *  - Edit mode: adjust quantities, remove items
  *  - Action buttons: Approve, Reject, Checkout, Download PDF
  *  - Delegates checkout flow to PortalProposalCheckout
  *
- * PO-10 Fix: All actions now call real tRPC mutations instead of toast-only.
+ * Data sources:
+ *  - Line items + departments + branding: storePortal.proposals.getById
+ *  - Mutations: requestFulfillment (approve), decline, editProducts
+ *
+ * "Add Product" is intentionally disabled. A portal-scoped, cross-tenant-safe
+ * catalog endpoint and corresponding storePortal.proposals.addProduct mutation
+ * are deferred to a separate PR; the K-3 cross-tenant fix forbids reusing the
+ * distributor-scoped trpc.products.list here.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ChevronRight, GitBranch, Clock, Check, X, Edit3, Plus, Minus, Trash2,
   Send, FileText, ShoppingCart, Download, Loader2,
@@ -41,13 +48,8 @@ export type PortalProposal = {
   viewToken?: string;
 };
 
-// Pending real-data wiring (Phase 8 followup K-4): replace these empty arrays
-// by loading line items from the proposal record (storePortal.proposals.getById)
-// and the addable catalog from trpc.products.list scoped to the store.
-// Until then, the proposal renders an empty-state and the add-product control
-// is shown disabled so the portal does not surface fake products to clients.
-const DEFAULT_PRODUCTS: ProductRow[] = [];
-
+// Addable catalog deferred — needs a portal-scoped, cross-tenant-safe products
+// endpoint plus a storePortal.proposals.addProduct mutation. See file header.
 const ADDABLE_CATALOG: ProductRow[] = [];
 
 interface PortalProposalDetailProps {
@@ -67,11 +69,64 @@ export function PortalProposalDetail({
   proposal, onBack, getStatusStyle, isDark, fg, mutedFg, borderColor, cardBg, taxRate, storeSlug,
 }: PortalProposalDetailProps) {
   const [editMode, setEditMode] = useState(false);
-  const [editProducts, setEditProducts] = useState<ProductRow[]>(DEFAULT_PRODUCTS);
+  const [editProducts, setEditProducts] = useState<ProductRow[]>([]);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState(0);
   const [currentProposal, setCurrentProposal] = useState<PortalProposal>(proposal);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const proposalIdNum = parseInt(currentProposal.id.replace(/\D/g, "") || "0");
+  const slug = storeSlug || "";
+
+  // ─── Real proposal data ──────────────────────────────────────────────────────
+  const detailQuery = trpc.storePortal.proposals.getById.useQuery(
+    { storeSlug: slug, proposalId: proposalIdNum },
+    { enabled: !!slug && proposalIdNum > 0, retry: false },
+  );
+  const utils = trpc.useUtils();
+
+  // Map server line items → ProductRow[] for the table.
+  // Carry the proposalProductId through `productId` so editProducts can target real DB rows.
+  const liveProducts = useMemo<ProductRow[]>(() => {
+    if (!detailQuery.data?.products) return [];
+    return detailQuery.data.products.map((pp) => {
+      const qty = pp.quantity ?? 1;
+      const unitPrice = parseFloat(pp.unitPrice ?? "0");
+      return {
+        name: pp.name,
+        sku: pp.sku ?? "",
+        qty,
+        unitPrice,
+        total: qty * unitPrice,
+        decoration: pp.decorationType ?? "",
+        productId: pp.id,
+      };
+    });
+  }, [detailQuery.data?.products]);
+
+  // Map server departments → DeptApproval[] for the multi-dept tracker.
+  const liveDepts = useMemo<DeptApproval[]>(() => {
+    if (!detailQuery.data?.departments) return [];
+    return detailQuery.data.departments.map((d) => {
+      const status: DeptApproval["status"] =
+        d.status === "approved" ? "approved"
+        : d.status === "rejected" ? "rejected"
+        : d.status === "pending" ? "pending"
+        : d.emailSentAt ? "pending"
+        : "not_started";
+      return {
+        name: d.departmentName,
+        status,
+        approver: d.approverName ?? d.contactName ?? undefined,
+        date: d.approvedAt ? new Date(d.approvedAt).toLocaleDateString() : undefined,
+      };
+    });
+  }, [detailQuery.data?.departments]);
+
+  // Reset edit buffer when leaving edit mode or when fresh data arrives mid-edit.
+  useEffect(() => {
+    if (!editMode) setEditProducts(liveProducts);
+  }, [liveProducts, editMode]);
 
   // ─── tRPC mutations ──────────────────────────────────────────────────────────
   const fulfillMut = trpc.storePortal.proposals.requestFulfillment.useMutation();
@@ -79,18 +134,15 @@ export function PortalProposalDetail({
   const editProductsMut = trpc.storePortal.proposals.editProducts.useMutation();
 
   const isMulti = currentProposal.type === "multi-department";
-  const depts = currentProposal.departments || [];
+  const depts = liveDepts.length > 0 ? liveDepts : currentProposal.departments || [];
   const approvedCount = depts.filter((d) => d.status === "approved").length;
   const vpStatusStyle = getStatusStyle(currentProposal.status);
-  const products = editMode ? editProducts : DEFAULT_PRODUCTS;
+  const products = editMode ? editProducts : liveProducts;
   const grandTotal = products.reduce((s, p) => s + p.total, 0);
   const totalUnits = products.reduce((s, p) => s + p.qty, 0);
   const addableProducts = ADDABLE_CATALOG.filter(
     (ap) => !products.some((p) => p.sku === ap.sku)
   );
-
-  const proposalIdNum = parseInt(currentProposal.id.replace(/\D/g, "") || "0");
-  const slug = storeSlug || "";
 
   // ─── Action handlers ─────────────────────────────────────────────────────────
   const handleApprove = async () => {
@@ -142,16 +194,16 @@ export function PortalProposalDetail({
     }
     setActionLoading("submit");
     try {
-      // Build edits from the diff between DEFAULT_PRODUCTS and editProducts
+      // Diff against the live server snapshot. Each item carries its real
+      // proposalProductId via productId — that's what the mutation expects.
       const edits: Array<{ proposalProductId: number; quantity?: number; removed?: boolean }> = [];
-      DEFAULT_PRODUCTS.forEach((orig, idx) => {
-        const current = editProducts.find((p) => p.sku === orig.sku);
+      liveProducts.forEach((orig) => {
+        if (orig.productId === undefined) return;
+        const current = editProducts.find((p) => p.productId === orig.productId);
         if (!current) {
-          // Removed
-          edits.push({ proposalProductId: idx + 1, removed: true });
+          edits.push({ proposalProductId: orig.productId, removed: true });
         } else if (current.qty !== orig.qty) {
-          // Quantity changed
-          edits.push({ proposalProductId: idx + 1, quantity: current.qty });
+          edits.push({ proposalProductId: orig.productId, quantity: current.qty });
         }
       });
 
@@ -169,6 +221,7 @@ export function PortalProposalDetail({
       });
       toast.success("Changes submitted to distributor");
       setEditMode(false);
+      await utils.storePortal.proposals.getById.invalidate({ storeSlug: slug, proposalId: proposalIdNum });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Couldn't submit changes");
     } finally {
@@ -197,6 +250,52 @@ export function PortalProposalDetail({
         };
     }
   };
+
+  // ─── Loading / error states ──────────────────────────────────────────────────
+  // First-load only: don't blank the screen on background refetches.
+  if (detailQuery.isLoading && !detailQuery.data) {
+    return (
+      <div>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 mb-5 text-[12px] font-semibold"
+          style={{ color: "var(--mt-brand)" }}
+        >
+          <ChevronRight size={14} className="rotate-180" /> Back to Proposals
+        </button>
+        <div
+          className="rounded-xl p-10 flex items-center justify-center"
+          style={{ border: `1px solid ${borderColor}`, backgroundColor: cardBg }}
+        >
+          <Loader2 size={18} className="animate-spin" style={{ color: mutedFg }} />
+          <span className="ml-3 text-[13px]" style={{ color: mutedFg }}>Loading proposal…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (detailQuery.error) {
+    return (
+      <div>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 mb-5 text-[12px] font-semibold"
+          style={{ color: "var(--mt-brand)" }}
+        >
+          <ChevronRight size={14} className="rotate-180" /> Back to Proposals
+        </button>
+        <div
+          className="rounded-xl p-8"
+          style={{ border: `1px solid ${borderColor}`, backgroundColor: cardBg }}
+        >
+          <p className="text-[13px] font-semibold mb-1" style={{ color: fg }}>
+            Couldn't load proposal details
+          </p>
+          <p className="text-[12px]" style={{ color: mutedFg }}>{detailQuery.error.message}</p>
+        </div>
+      </div>
+    );
+  }
 
   // ─── Checkout overlay ────────────────────────────────────────────────────────
   if (checkoutStep > 0) {
@@ -539,7 +638,7 @@ export function PortalProposalDetail({
               <FileText size={14} /> Save Draft
             </button>
             <button
-              onClick={() => { setEditMode(false); setEditProducts(DEFAULT_PRODUCTS); setShowAddProduct(false); }}
+              onClick={() => { setEditMode(false); setEditProducts(liveProducts); setShowAddProduct(false); }}
               className="px-5 py-2.5 rounded-lg text-[12px] font-semibold"
               style={{ color: "#EF4444" }}
             >

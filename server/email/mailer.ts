@@ -20,7 +20,7 @@ let _resend: Resend | null = null;
 let _apiKeySnapshot = "";
 
 function getResendClient(): Resend | null {
-  const apiKey = (process.env.RESEND_API_KEY ?? "").trim();
+  const apiKey = process.env.RESEND_API_KEY ?? "";
   if (!apiKey) {
     log.warn("RESEND_API_KEY is not set — emails will not be sent");
     return null;

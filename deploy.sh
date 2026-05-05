@@ -4,7 +4,7 @@
 #
 # Ordered, auditable, and safe-by-default:
 #   1. git pull                    (fast-forward from origin/main)
-#   2. npm ci                      (only if package-lock changed)
+#   2. pnpm install                (only if pnpm-lock.yaml/package.json changed, or node_modules missing)
 #   3. backup schema               (mysqldump --no-data to dist/schema-TS.sql)
 #   4. npm run db:push             (our idempotent migrator)
 #   5. npm run build               (vite + esbuild)
@@ -32,8 +32,9 @@ cd "$ROOT"
 exec > >(while IFS= read -r line; do printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$line"; done | tee -a "$LOG") 2>&1
 
 DEPLOY_ID="$(date -u +'%Y%m%d-%H%M%S')"
+START_EPOCH=$(date +%s)
 echo "═══════════════════════════════════════════════════════════════════════"
-echo "[deploy $DEPLOY_ID] starting"
+echo "[deploy $DEPLOY_ID] DEPLOY STARTED commit=$(git rev-parse HEAD)→pending"
 echo "═══════════════════════════════════════════════════════════════════════"
 
 # Capture the pre-deploy commit in case we need to roll back the code.
@@ -42,7 +43,7 @@ PREV_DIST_BACKUP="$BACKUP_DIR/dist-prev-$DEPLOY_ID.tar.gz"
 
 # Rollback sequence — defined early so every failure path below can invoke it.
 rollback_and_exit() {
-  echo "[deploy $DEPLOY_ID] DEPLOY FAILED — rolled back to previous build"
+  echo "[deploy $DEPLOY_ID] DEPLOY FAILED step=rollback elapsed=$(( $(date +%s) - START_EPOCH ))s — rolled back to previous build"
   if [ -f "$PREV_DIST_BACKUP" ]; then
     echo "[deploy $DEPLOY_ID] restoring dist/ from $PREV_DIST_BACKUP"
     rm -rf "$ROOT/dist"
@@ -73,11 +74,19 @@ else
 fi
 
 # ── 2. install deps if lockfile changed ─────────────────────────────────────
-echo "[deploy $DEPLOY_ID] step 2/7: npm ci (only when package-lock changed)"
-if [ "$PREV_COMMIT" != "$NEW_COMMIT" ] && git diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" | grep -qE '^(package-lock\.json|package\.json)$'; then
-  npm ci
+echo "[deploy $DEPLOY_ID] step 2/7: pnpm install (only when pnpm-lock.yaml/package.json changed, or node_modules missing)"
+deps_changed=0
+if [ ! -d "$ROOT/node_modules" ]; then
+  echo "[deploy $DEPLOY_ID] node_modules missing — forcing install"
+  deps_changed=1
+elif [ "$PREV_COMMIT" != "$NEW_COMMIT" ] && git diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" | grep -qE '^(pnpm-lock\.yaml|package\.json)$'; then
+  echo "[deploy $DEPLOY_ID] pnpm-lock.yaml or package.json changed — installing"
+  deps_changed=1
+fi
+if [ "$deps_changed" -eq 1 ]; then
+  pnpm install --frozen-lockfile
 else
-  echo "[deploy $DEPLOY_ID] dependencies unchanged — skipping npm ci"
+  echo "[deploy $DEPLOY_ID] dependencies unchanged — skipping pnpm install"
 fi
 
 # ── 3. back up DB schema before migrating ───────────────────────────────────
@@ -106,6 +115,7 @@ fi
 echo "[deploy $DEPLOY_ID] step 4/7: npm run db:push"
 if ! npm run db:push; then
   echo "[deploy $DEPLOY_ID] FAIL — migrations failed. Aborting BEFORE build/restart so pm2 keeps serving the previous build."
+  echo "[deploy $DEPLOY_ID] DEPLOY FAILED step=migrations elapsed=$(( $(date +%s) - START_EPOCH ))s"
   exit 1
 fi
 
@@ -120,6 +130,7 @@ fi
 echo "[deploy $DEPLOY_ID] step 5/7: npm run build"
 if ! npm run build; then
   echo "[deploy $DEPLOY_ID] FAIL — build failed. pm2 still serving the previous dist. No rollback needed."
+  echo "[deploy $DEPLOY_ID] DEPLOY FAILED step=build elapsed=$(( $(date +%s) - START_EPOCH ))s"
   exit 1
 fi
 
@@ -154,5 +165,6 @@ if [ "$health_ok" -ne 1 ]; then
   rollback_and_exit
 fi
 
-echo "[deploy $DEPLOY_ID] ✓ healthy — deploy complete (commit $NEW_COMMIT)"
+echo "[deploy $DEPLOY_ID] ✓ healthy"
+echo "[deploy $DEPLOY_ID] DEPLOY COMPLETE commit=$NEW_COMMIT elapsed=$(( $(date +%s) - START_EPOCH ))s"
 echo "═══════════════════════════════════════════════════════════════════════"

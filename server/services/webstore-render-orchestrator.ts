@@ -21,9 +21,9 @@
  * nano-banana.ts.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { products, stores, storeProducts, clientLogos } from "../../drizzle/schema";
-import { addWebstoreRenderJob } from "../queue/webstore-render-queue";
+import { addWebstoreRenderJob, webstoreRenderQueue } from "../queue/webstore-render-queue";
 import type { DecorationMethod } from "./nano-banana";
 import type { getDb } from "../db";
 import { getLogger } from "../utils/logger";
@@ -86,6 +86,27 @@ export function resolveDecorationMethod(
 }
 
 /**
+ * Phase 7 — customer-facing render display gate.
+ *
+ * Projects the storeProducts render columns to a single nullable URL the
+ * webstore should show in the photoreal layer. Returns null when the
+ * binding is unapproved, in which case WebstoreLogoOverlay falls back to
+ * the CSS logo composite. Override beats AI render when both are present.
+ *
+ * Pure function so it can be unit-tested without touching the DB. Used
+ * by storesCrud.getBySlug; do not call from the distributor-facing
+ * renderManager router (distributors must see unapproved output).
+ */
+export function gateRenderUrlForWebstore(sp: {
+  renderApproved: boolean;
+  renderOverrideUrl: string | null;
+  webstoreRenderedImageUrl: string | null;
+}): string | null {
+  if (!sp.renderApproved) return null;
+  return sp.renderOverrideUrl ?? sp.webstoreRenderedImageUrl ?? null;
+}
+
+/**
  * Reasons enqueue can decline to queue a render. Discriminated against
  * EnqueueRenderResult so callers (notably retryRender) can map each
  * reason to a specific operator-facing error or follow-up action.
@@ -124,6 +145,7 @@ export async function enqueueRenderForStoreProduct(
   db: Db,
   storeId: number,
   productId: number,
+  options?: { force?: boolean; autoApprove?: { approvedBy: number } },
 ): Promise<EnqueueRenderResult> {
   try {
     const [product] = await db
@@ -142,6 +164,26 @@ export async function enqueueRenderForStoreProduct(
       })
       .from(products)
       .where(eq(products.id, productId))
+      .limit(1);
+
+    // Phase 7 — pull the distributor's per-binding prompt tweak (if any)
+    // so it rides through to the worker. Read separately because the
+    // adjustment lives on storeProducts, not products. Missing storeProduct
+    // row would have already aborted enqueue at the upstream call site;
+    // here we treat absence as "no adjustment" rather than fail.
+    const [binding] = await db
+      .select({
+        promptAdjustment: storeProducts.renderPromptAdjustment,
+        placementX:        storeProducts.renderPlacementX,
+        placementY:        storeProducts.renderPlacementY,
+        placementWidth:    storeProducts.renderPlacementWidth,
+        placementHeight:   storeProducts.renderPlacementHeight,
+        placementRotation: storeProducts.renderPlacementRotation,
+      })
+      .from(storeProducts)
+      .where(
+        sql`${storeProducts.storeId} = ${storeId} AND ${storeProducts.productId} = ${productId}`,
+      )
       .limit(1);
     if (!product) {
       log.debug(`enqueue skipped: productId=${productId} not found`);
@@ -195,21 +237,45 @@ export async function enqueueRenderForStoreProduct(
       product.category,
     );
 
-    await addWebstoreRenderJob({
-      storeId,
-      productId: product.id,
-      productName: product.name ?? undefined,
-      productImageUrl: product.imageUrl,
-      logoUrl,
-      decorationMethod,
-      placement: {
-        x: Number(product.x),
-        y: Number(product.y),
-        w: Number(product.w),
-        h: Number(product.h),
-        zone: product.zone,
+    // Manual text adjustment and manual placement coords ride separate
+    // channels into the prompt. The text is free-form ("make it look more
+    // embroidered") and goes through the adjustment block; the coords are
+    // structured and need top-left-edge framing that a generic adjustment
+    // wrapper can't provide, so they're emitted by buildPrompt as a
+    // dedicated placement-override block at the very end of the prompt.
+    const manualAdjustment = binding?.promptAdjustment ?? undefined;
+    const manualPlacement =
+      binding?.placementX != null
+        ? {
+            x:        Number(binding.placementX),
+            y:        Number(binding.placementY ?? 0),
+            width:    Number(binding.placementWidth ?? 0),
+            height:   Number(binding.placementHeight ?? 0),
+            rotation: Number(binding.placementRotation ?? 0),
+          }
+        : undefined;
+
+    await addWebstoreRenderJob(
+      {
+        storeId,
+        productId: product.id,
+        productName: product.name ?? undefined,
+        productImageUrl: product.imageUrl,
+        logoUrl,
+        decorationMethod,
+        placement: {
+          x: Number(product.x),
+          y: Number(product.y),
+          w: Number(product.w),
+          h: Number(product.h),
+          zone: product.zone,
+        },
+        promptAdjustment: manualAdjustment ?? undefined,
+        manualPlacement,
+        autoApprove: options?.autoApprove,
       },
-    });
+      options?.force ? { force: true } : undefined,
+    );
     log.info(`enqueued render: storeId=${storeId} productId=${productId} method=${decorationMethod}`);
     return { kind: "queued", decorationMethod };
   } catch (err) {
@@ -283,37 +349,80 @@ export async function flagPendingForStoreLogoChange(db: Db, storeId: number): Pr
 }
 
 /**
- * Worker-boot orphan reconciliation: any storeProducts row found in
- * `webstoreRenderStatus='rendering'` at worker startup is by definition
- * orphaned — the single-worker architecture means no other process can
- * be mid-render against that row. Flip it to `'failed'` so the next
- * 5c logo-change hook (or a distributor's manual override in Phase 7)
- * re-enqueues it. Single-column update — webstoreRenderedImageUrl /
- * webstoreRenderedAt / webstoreRenderDecoration / webstoreRenderModel
- * are intentionally preserved so a prior render remains a valid
- * customer-facing fallback while the next render is queued.
+ * Worker-boot orphan reconciliation: storeProducts rows found in
+ * `webstoreRenderStatus='rendering'` at worker startup that have NO
+ * corresponding live BullMQ job (active / waiting / delayed / paused)
+ * are orphans — the worker died mid-render and nothing will ever
+ * complete them. Flip those to `'failed'` so the distributor's Render
+ * Manager can re-render. Rows that DO have a live queue job are left
+ * alone — a healthy worker is just slow, not stuck.
+ *
+ * Single-column update — webstoreRenderedImageUrl / webstoreRenderedAt
+ * / webstoreRenderDecoration / webstoreRenderModel are intentionally
+ * preserved so a prior render remains a valid customer-facing fallback
+ * while the next render is queued.
  *
  * Returns the count of rows reconciled. Caller wraps in try/catch and
  * decides whether to fail the boot or warn-and-continue (worker boot
  * uses warn-and-continue: cleanup of historical orphans must not block
  * processing of new jobs).
  *
- * Note: NOT fire-and-forget — propagates DB errors to the caller. The
- * sibling helpers above are different (they're hot-path tRPC mutations
- * where a render-orchestration failure should never abort the user's
- * mutation); this is a one-shot boot routine where the caller wants
- * the error.
+ * Failure modes:
+ *   - DB error on SELECT/UPDATE: propagates to caller (worker entry
+ *     warn-and-continues). Same idiom as before this upgrade.
+ *   - Queue.getJobs() throws (Redis hiccup): propagates. Better to
+ *     skip reconciliation than to incorrectly clobber active jobs by
+ *     falling back to the old "reset all rendering rows" behavior.
+ *     A subsequent worker boot will retry once Redis is healthy.
  */
 export async function reconcileOrphanRenderingRows(db: Db): Promise<number> {
-  const result = await db
+  const renderingRows = await db
+    .select({
+      id: storeProducts.id,
+      storeId: storeProducts.storeId,
+      productId: storeProducts.productId,
+    })
+    .from(storeProducts)
+    .where(eq(storeProducts.webstoreRenderStatus, "rendering"));
+
+  if (renderingRows.length === 0) {
+    log.info("reconcileOrphanRenderingRows: no orphan 'rendering' rows found");
+    return 0;
+  }
+
+  // Pull every job that could legitimately still complete. 'active' is
+  // a job currently being processed by a worker; 'waiting'/'delayed'/
+  // 'paused' are queued but not yet started. Anything in 'completed'
+  // or 'failed' is by definition not in flight.
+  const liveJobs = await webstoreRenderQueue.getJobs([
+    "active", "waiting", "delayed", "paused",
+  ]);
+  const liveKeys = new Set<string>();
+  for (const job of liveJobs) {
+    const data = job?.data as { storeId?: number; productId?: number } | undefined;
+    if (data && typeof data.storeId === "number" && typeof data.productId === "number") {
+      liveKeys.add(`${data.storeId}-${data.productId}`);
+    }
+  }
+
+  const trueOrphanIds = renderingRows
+    .filter(r => !liveKeys.has(`${r.storeId}-${r.productId}`))
+    .map(r => r.id);
+
+  if (trueOrphanIds.length === 0) {
+    log.info(
+      `reconcileOrphanRenderingRows: ${renderingRows.length} 'rendering' row(s) all have live queue jobs — none reconciled`,
+    );
+    return 0;
+  }
+
+  await db
     .update(storeProducts)
     .set({ webstoreRenderStatus: "failed" })
-    .where(eq(storeProducts.webstoreRenderStatus, "rendering"));
-  const affected = (result as unknown as Array<{ affectedRows?: number }>)[0]?.affectedRows ?? 0;
-  if (affected > 0) {
-    log.warn(`reconcileOrphanRenderingRows: flipped ${affected} orphan rendering row(s) → failed (likely worker death during prior render)`);
-  } else {
-    log.info("reconcileOrphanRenderingRows: no orphan 'rendering' rows found");
-  }
-  return affected;
+    .where(inArray(storeProducts.id, trueOrphanIds));
+
+  log.warn(
+    `reconcileOrphanRenderingRows: flipped ${trueOrphanIds.length}/${renderingRows.length} orphan row(s) → failed (no live queue job; likely worker death during prior render)`,
+  );
+  return trueOrphanIds.length;
 }

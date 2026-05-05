@@ -139,6 +139,13 @@ export async function runSupplierSync(context: SyncContext): Promise<SyncResult>
 
     productsScanned = productsToSync.length;
 
+    // PSRESTful's pricing endpoint requires an explicit fob_id (no default).
+    // FOB resolution uses the module-level 24h cache in PSRestfulService —
+    // which negative-caches empty responses too, so a supplier whose
+    // fob-points endpoint returns nothing won't trigger the per-product
+    // retry loop that disabled our keys on 2026-05-04.
+    let loggedEmptyFob = false;
+
     // Sync each product
     for (const productId of productsToSync) {
       try {
@@ -150,11 +157,28 @@ export async function runSupplierSync(context: SyncContext): Promise<SyncResult>
 
         if (!product?.externalId) continue;
 
-        // Fetch pricing from PSRESTful
+        const fobs = await psRestfulService.getFobPointsCached(
+          supplier.psRestfulCode,
+          product.externalId,
+          psContext,
+        );
+        if (fobs.length === 0) {
+          if (!loggedEmptyFob) {
+            logger.warn(`${supplier.psRestfulCode} FOB points unavailable — skipping pricing for all products this run`);
+            loggedEmptyFob = true;
+          }
+          continue;
+        }
+        // PromoStandards convention: first entry is the supplier's primary warehouse.
+        const fobId = fobs[0].fobId;
+
+        // Fetch pricing from PSRESTful. Request USD and let convertToHomeCurrency
+        // normalize — not every supplier supports every currency natively.
         const priceTiers = await psRestfulService.getProductPricing(
           supplier.psRestfulCode,
           product.externalId,
-          psContext
+          { currency: "USD", fobId, priceType: "Net" },
+          psContext,
         );
 
         if (priceTiers.length === 0) continue;

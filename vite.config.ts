@@ -107,6 +107,7 @@ export default defineConfig({
     },
   },
   define: {
+    crypto: "globalThis.crypto",
     global: "globalThis",
   },
   envDir: path.resolve(__dirname),

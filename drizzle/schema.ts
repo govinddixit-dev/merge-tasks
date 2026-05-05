@@ -179,6 +179,17 @@ export const products = mysqlTable("products", {
   webstoreImprintPlacementConfidence: decimal("webstoreImprintPlacementConfidence", { precision: 3, scale: 2 }),
   webstoreImprintPlacementAnalyzedAt: timestamp("webstoreImprintPlacementAnalyzedAt"),
   webstoreImprintPlacementSource:     mysqlEnum("webstoreImprintPlacementSource", ["ai", "distributor_override"]).default("ai"),
+  // ── Phase 8 — Product variant grouping (added in 0103) ──
+  // styleGroup is the canonical key; all color/size variants of the same
+  // product family share one slug derived from the normalized name. The
+  // catalog grid collapses by this column; the PDP query fans out from it.
+  // Exactly one row per group has isVariantPrimary=TRUE and is the card
+  // face. colorName/Hex/swatchUrl drive the color selector swatches.
+  styleGroup:       varchar("styleGroup",       { length: 128 }),
+  isVariantPrimary: boolean("isVariantPrimary").default(false).notNull(),
+  colorName:        varchar("colorName",        { length: 64  }),
+  colorHex:         varchar("colorHex",         { length: 9   }),
+  swatchUrl:        varchar("swatchUrl",        { length: 1024 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => ({
@@ -189,6 +200,7 @@ export const products = mysqlTable("products", {
   orgCategoryIdx: index("products_orgCategory_idx").on(t.organizationId, t.category),
   // Backfill script seeks rows where analyzedAt IS NULL.
   webstorePlacementPendingIdx: index("products_webstore_placement_pending_idx").on(t.webstoreImprintPlacementAnalyzedAt),
+  styleGroupIdx: index("products_styleGroup_idx").on(t.styleGroup),
 }));
 
 export type Product = typeof products.$inferSelect;
@@ -348,6 +360,30 @@ export const storeProducts = mysqlTable("storeProducts", {
   webstoreRenderDecoration: varchar("webstoreRenderDecoration", { length: 50 }),
   webstoreRenderStatus:     mysqlEnum("webstoreRenderStatus", ["pending", "rendering", "complete", "failed"]),
   webstoreRenderModel:      varchar("webstoreRenderModel", { length: 64 }),
+  // ── Phase 7 — Hybrid distributor approval gate (added in 0101) ──
+  // Webstore shows the photorealistic render only when renderApproved=TRUE;
+  // otherwise falls back to CSS logo overlay. Worker writes new renders with
+  // approved=FALSE so they enter the distributor's "Pending Review" queue.
+  // renderOverrideUrl supersedes webstoreRenderedImageUrl when set (manual
+  // upload takes priority over AI render). renderPromptAdjustment persists
+  // the distributor's per-binding prompt tweak across re-renders.
+  renderApproved:         boolean("renderApproved").default(false).notNull(),
+  renderApprovedAt:       timestamp("renderApprovedAt"),
+  renderApprovedBy:       int("renderApprovedBy").references(() => users.id),
+  renderOverrideUrl:      varchar("renderOverrideUrl", { length: 2048 }),
+  renderPromptAdjustment: text("renderPromptAdjustment"),
+  // ── Phase 7+ — Visual Placement Editor (added in 0102) ──
+  // Nullable percentage coords (0-100) of the product image, set by the
+  // distributor via the drag/resize/rotate editor. NULL = no manual
+  // placement; orchestrator falls back to the AI-derived placement on
+  // products.webstoreImprintPlacement*. When set, the orchestrator
+  // prepends a coordinate-derived prompt fragment to the manual
+  // renderPromptAdjustment before enqueueing.
+  renderPlacementX:        decimal("renderPlacementX",        { precision: 5, scale: 2 }),
+  renderPlacementY:        decimal("renderPlacementY",        { precision: 5, scale: 2 }),
+  renderPlacementWidth:    decimal("renderPlacementWidth",    { precision: 5, scale: 2 }),
+  renderPlacementHeight:   decimal("renderPlacementHeight",   { precision: 5, scale: 2 }),
+  renderPlacementRotation: decimal("renderPlacementRotation", { precision: 5, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   storeIdIdx: index("storeProducts_storeId_idx").on(t.storeId),

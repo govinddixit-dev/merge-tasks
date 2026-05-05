@@ -82,11 +82,11 @@ export const ENV = {
   smtpPass: process.env.SMTP_PASS ?? "",
   smtpFrom: process.env.SMTP_FROM ?? "",
   // OpenAI API key — set APP_OPENAI_API_KEY in .env or fall back to OPENAI_API_KEY
-  appOpenAiApiKey: (process.env.APP_OPENAI_API_KEY ?? "").trim(),
+  appOpenAiApiKey: process.env.APP_OPENAI_API_KEY ?? "",
   // Anthropic API key — used by the Anthropic provider in llmConfig.ts
-  anthropicApiKey: (process.env.ANTHROPIC_API_KEY ?? "").trim(),
-  // Google Gemini API key — used by the Google provider in llmConfig.ts (also default LLM fallback)
-  geminiApiKey: (process.env.GEMINI_API_KEY ?? "").trim(),
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  // Google Gemini API key — used by the Google provider in llmConfig.ts
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
 
   // --- AI Privacy Enhancement (Layer 4) ---
   /** Send X-OpenAI-Data-Policy: zdr header to prevent prompt storage/training */
@@ -96,7 +96,7 @@ export const ENV = {
   /** LLM provider: openai | anthropic | google | together | groq | mistral */
   llmProvider: (process.env.LLM_PROVIDER || "openai") as string,
   llmApiUrl: process.env.LLM_API_URL || "",
-  llmApiKey: (process.env.LLM_API_KEY || "").trim(),
+  llmApiKey: process.env.LLM_API_KEY || "",
   llmModel: process.env.LLM_MODEL || "",
   llmMaxTokens: parseInt(process.env.LLM_MAX_TOKENS || "16384", 10),
   llmTemperature: parseFloat(process.env.LLM_TEMPERATURE || "0"),
@@ -104,7 +104,7 @@ export const ENV = {
   /** Optional fallback provider for automatic retry on primary failure */
   llmFallbackProvider: process.env.LLM_FALLBACK_PROVIDER || "",
   llmFallbackApiUrl: process.env.LLM_FALLBACK_API_URL || "",
-  llmFallbackApiKey: (process.env.LLM_FALLBACK_API_KEY || "").trim(),
+  llmFallbackApiKey: process.env.LLM_FALLBACK_API_KEY || "",
   llmFallbackModel: process.env.LLM_FALLBACK_MODEL || "",
 
   /**

@@ -117,8 +117,7 @@ function resolveProvider(raw: string): LLMProvider {
 }
 
 function resolveApiKey(provider: LLMProvider, explicitKey: string): string {
-  const ex = explicitKey.trim();
-  if (ex) return ex;
+  if (explicitKey) return explicitKey;
   // Provider-specific env var fallbacks so each backend can be used
   // without having to set LLM_API_KEY explicitly.
   switch (provider) {
@@ -132,11 +131,7 @@ function resolveApiKey(provider: LLMProvider, explicitKey: string): string {
       break;
   }
   // Backward-compatible default: the existing OpenAI key
-  return (
-    ENV.appOpenAiApiKey ||
-    (process.env.OPENAI_API_KEY ?? "").trim() ||
-    ""
-  );
+  return ENV.appOpenAiApiKey || process.env.OPENAI_API_KEY || "";
 }
 
 /**
@@ -192,7 +187,7 @@ function buildProviderOptions(
  *
  *   Claude Haiku 4.5  — quick copilot + daily briefings (low latency, cheap)
  *   Claude Sonnet 4.5 — proposal generation + complex reasoning
- *   Gemini 2.5 Flash  — high-volume simple tasks (cheap, throughput-oriented)
+ *   Gemini 2.0 Flash  — high-volume simple tasks (cheap, throughput-oriented)
  *                       Also used as the automatic fallback on primary failure.
  *
  * Model IDs are pinned here rather than in env vars so routing is explicit
@@ -204,7 +199,7 @@ const TASK_ROUTES: Record<LLMTask, { provider: LLMProvider; model: string }> = {
   briefing:  { provider: "anthropic", model: "claude-haiku-4-5" },
   reasoning: { provider: "anthropic", model: "claude-sonnet-4-5" },
   proposal:  { provider: "anthropic", model: "claude-sonnet-4-5" },
-  bulk:      { provider: "google",    model: "gemini-2.5-flash" },
+  bulk:      { provider: "google",    model: "gemini-2.0-flash" },
 };
 
 /**
@@ -245,7 +240,7 @@ export function loadLLMConfig(): LLMProviderConfig {
 /**
  * Load the fallback LLM provider configuration.
  *
- * Default fallback is Google Gemini 2.5 Flash — fast and cheap enough to
+ * Default fallback is Google Gemini 2.0 Flash — fast and cheap enough to
  * absorb primary-provider failures for simple / high-volume workloads.
  * Operators can override via LLM_FALLBACK_PROVIDER / LLM_FALLBACK_MODEL.
  *
@@ -258,7 +253,7 @@ export function loadFallbackConfig(): LLMProviderConfig | null {
   const defaults = PROVIDER_DEFAULTS[provider];
 
   const DEFAULT_FALLBACK_MODEL_BY_PROVIDER: Partial<Record<LLMProvider, string>> = {
-    google: "gemini-2.5-flash",
+    google: "gemini-2.0-flash",
   };
   const model =
     ENV.llmFallbackModel ||

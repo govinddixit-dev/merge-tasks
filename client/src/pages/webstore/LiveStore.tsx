@@ -19,6 +19,7 @@ import type { StoreData, StoreProduct, StoreUserData, CartItem, CartItemKind, Ad
 // Sub-components (each in its own file)
 import StoreHeader from "./StoreHeader";
 import StoreFooter from "./StoreFooter";
+import { BrandRoot } from "./templates/BrandRoot";
 import StoreHomePage from "./StoreHomePage";
 import StoreProductsPage from "./StoreProductsPage";
 import StoreProductDetailPage from "./StoreProductDetailPage";
@@ -351,6 +352,19 @@ export default function LiveStore() {
     </div>
   );
 
+  // Modern owns its own header/footer chrome on the surfaces that were
+  // rebuilt for the wireframe handoff (home, shop, cart, checkout,
+  // custom-request). Login, set-password, portal, and the print storefront
+  // keep the global chrome until those surfaces are redesigned. Classic +
+  // Minimal always use the global chrome.
+  const modernSurface =
+    subPath === "" || subPath === "home"
+      || subPath === "products"
+      || subPath === "cart"
+      || subPath === "checkout"
+      || subPath === "custom-request";
+  const suppressGlobalChrome = storeData.template === "modern" && modernSurface;
+
   return (
     <StoreContext.Provider value={{
       store: storeData,
@@ -359,6 +373,7 @@ export default function LiveStore() {
       isLoggedIn, storeUser, loginUser, logoutUser,
       activeLocationId, setActiveLocationId,
     }}>
+      <BrandRoot>
       <div className="min-h-screen transition-colors duration-300" style={{
         backgroundColor: isDark ? "#1A1A1A" : "#FFFFFF",
         color: isDark ? "#F5F5F5" : "#1A1A1A",
@@ -370,9 +385,13 @@ export default function LiveStore() {
           isLoggedIn={isLoggedIn}
           onLogoutLocal={() => { setStoreUser(null); setIsLoggedIn(false); }}
         />
-        <StoreHeader />
-        {storeData.multiLocationEnabled && storeData.locations.length > 0 && <LocationTabBar />}
-        <main className="pt-[72px]">
+        {!suppressGlobalChrome && (
+          <>
+            <StoreHeader />
+            {storeData.multiLocationEnabled && storeData.locations.length > 0 && <LocationTabBar />}
+          </>
+        )}
+        <main className={suppressGlobalChrome ? "" : "pt-[72px]"}>
           {(subPath === "" || subPath === "home") && <StoreHomePage />}
           {subPath === "login" && <StoreLoginPage />}
           {subPath === "set-password" && <SetPasswordPage />}
@@ -406,8 +425,9 @@ export default function LiveStore() {
             )
           )}
         </main>
-        <StoreFooter />
+        {!suppressGlobalChrome && <StoreFooter />}
       </div>
+      </BrandRoot>
     </StoreContext.Provider>
   );
 }

@@ -191,19 +191,6 @@ export const copilotRouter = router({
           ) {
             throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "AI usage quota exhausted. Please try again later." });
           }
-          if (
-            errMsg.includes("API_KEY_INVALID") ||
-            errMsg.includes("API key not valid") ||
-            errMsg.includes("Incorrect API key")
-          ) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message:
-                "LLM API key rejected by the provider. Copilot uses Anthropic first, then falls back to Google Gemini. " +
-                "Check ANTHROPIC_API_KEY and GEMINI_API_KEY in `.env` (create a Gemini key at https://aistudio.google.com/apikey ), " +
-                "restart the server, and confirm the Generative Language API is allowed for that key.",
-            });
-          }
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `AI service error: ${errMsg}` });
         }
 

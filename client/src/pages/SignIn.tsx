@@ -568,11 +568,7 @@ export default function SignIn() {
                       const result = await googleAuth.mutateAsync({ origin: window.location.origin });
                       window.location.href = result.url;
                     } catch (err: unknown) {
-                      toast.error(
-                        err instanceof Error
-                          ? err.message
-                          : "Google sign-in not available. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to `.env` and restart the server.",
-                      );
+                      toast.error(err instanceof Error ? err.message : "Google sign-in not available. Please configure GOOGLE_CLIENT_ID in Settings.");
                     }
                   }}
                   className="h-11 border border-mt-border rounded-lg flex items-center justify-center gap-2 text-[13px] text-mt-ink-2 font-medium hover:bg-mt-surface transition-all active:scale-[0.98] disabled:opacity-50"

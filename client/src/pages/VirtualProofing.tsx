@@ -16,6 +16,7 @@ import { getLogger } from "@/lib/logger";
 import type { RouterOutput } from "@/lib/trpc";
 import { VirtualProofingViewer } from "@/components/proofing/VirtualProofingViewer";
 import { ProofRevisionDialog } from "@/components/proofing/ProofRevisionDialog";
+import { GroupedProductGrid } from "@/components/products/GroupedProductGrid";
 
 type DbClient = RouterOutput["clients"]["list"]["items"][number];
 type DbProduct = RouterOutput["products"]["list"]["items"][number];
@@ -733,22 +734,9 @@ export default function VirtualProofing() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 mb-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <button onClick={selectAll} className="px-3 py-2 text-xs font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50">
-                Select All ({filteredProducts.length})
-              </button>
-              <button onClick={deselectAll} className="px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-                Clear
+            <div className="flex items-center justify-end gap-2 mb-4">
+              <button onClick={deselectAll} className="px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150">
+                Clear selection
               </button>
             </div>
 
@@ -759,52 +747,21 @@ export default function VirtualProofing() {
                 <p className="text-sm text-gray-500 mb-4">Add products to your catalog first, then return here to generate proofs.</p>
                 <button
                   onClick={() => navigate("/product-curation")}
-                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-150"
                 >
                   Go to Product Curation
                 </button>
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-6">
-                  {filteredProducts.map((product) => {
-                    const isSelected = selectedProductIds.has(product.id);
-                    return (
-                      <button
-                        key={product.id}
-                        onClick={() => toggleProduct(product.id)}
-                        className={`relative border rounded-xl p-4 text-left transition-all ${
-                          isSelected
-                            ? "border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50/50"
-                            : "border-gray-200 hover:border-indigo-300 hover:shadow-md"
-                        }`}
-                      >
-                        {/* Checkbox */}
-                        <div className="absolute top-2 right-2">
-                          {isSelected ? (
-                            <CheckSquare className="w-5 h-5 text-indigo-600" />
-                          ) : (
-                            <Square className="w-5 h-5 text-gray-300" />
-                          )}
-                        </div>
-
-                        <div className="w-full h-20 bg-gray-50 rounded-lg flex items-center justify-center mb-3">
-                          {product.imageUrl ? (
-                            <img
-                              src={product.imageUrl}
-                              alt={product.name}
-                              className="h-16 w-16 object-contain"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                            />
-                          ) : (
-                            <Shirt className="w-10 h-10 text-gray-300" />
-                          )}
-                        </div>
-                        <p className="text-sm font-medium text-gray-900 truncate pr-6">{product.name}</p>
-                        <p className="text-xs text-gray-500">{product.category}</p>
-                      </button>
-                    );
-                  })}
+                <div className="mb-6">
+                  <GroupedProductGrid
+                    selectedIds={Array.from(selectedProductIds)}
+                    onChange={(next) => setSelectedProductIds(new Set(next))}
+                    showSearch
+                    emptyTitle="No products match"
+                    emptyDescription="Try a different search term."
+                  />
                 </div>
 
                 {/* Generate Button */}
