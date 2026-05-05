@@ -1,0 +1,21 @@
+CREATE TABLE `departmentApprovals` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`proposalId` int NOT NULL,
+	`departmentName` varchar(255) NOT NULL,
+	`contactName` varchar(255),
+	`contactEmail` varchar(320),
+	`description` varchar(512),
+	`approvalToken` varchar(64) NOT NULL,
+	`deptApprovalStatus` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+	`addedBy` enum('distributor','poc') NOT NULL DEFAULT 'distributor',
+	`approvedAt` timestamp,
+	`approverName` varchar(255),
+	`approverNotes` text,
+	`emailSentAt` timestamp,
+	`emailViewedAt` timestamp,
+	`sortOrder` int NOT NULL DEFAULT 0,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `departmentApprovals_id` PRIMARY KEY(`id`),
+	CONSTRAINT `departmentApprovals_approvalToken_unique` UNIQUE(`approvalToken`)
+);

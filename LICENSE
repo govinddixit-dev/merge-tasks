@@ -1,0 +1,44 @@
+MergeTasks — Proprietary Commercial License
+
+Copyright (c) 2026 Yan Charitar / MergeTasks. All rights reserved.
+
+This software and its associated source code, documentation, data files,
+design assets, and any other material contained in this repository
+(collectively, the "Software") are the proprietary and confidential
+property of Yan Charitar and MergeTasks ("Owner"). The Software is
+licensed, not sold.
+
+NO LICENSE IS GRANTED by the mere availability of this repository. Unless
+you have received a separate written agreement signed by the Owner that
+expressly grants you rights in the Software, you are NOT permitted to:
+
+  (a) copy, reproduce, or duplicate the Software, in whole or in part, by
+      any means or in any form;
+  (b) modify, adapt, translate, create derivative works from, or merge
+      the Software with any other software;
+  (c) distribute, sublicense, sell, rent, lease, lend, publish, host, or
+      otherwise make the Software available to any third party;
+  (d) use the Software, in whole or in part, in any production, staging,
+      commercial, or publicly-accessible environment;
+  (e) reverse engineer, decompile, disassemble, or attempt to derive the
+      source code or underlying structure, ideas, algorithms, or
+      organisation of the Software beyond the source as explicitly
+      provided;
+  (f) remove, alter, or obscure any proprietary notices, labels, or
+      marks contained in the Software.
+
+Any use of the Software outside the scope of an executed, written
+agreement with the Owner is a material breach of this license and
+constitutes copyright infringement and misappropriation of trade secrets,
+subject to all remedies available at law and in equity.
+
+Requests for licensing, partnership, or any other permitted use should be
+directed to the Owner in writing.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NON-INFRINGEMENT. IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,1 @@
+ALTER TABLE `distributorProfiles` ADD `brandBannerColor` varchar(7) DEFAULT '#654BF9';

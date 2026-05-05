@@ -1,0 +1,562 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: 'Albert Sans', system-ui, sans-serif;
+  --font-heading: 'Albert Sans', system-ui, sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  /* MergeTasks brand tokens — available as bg-mt-brand, text-mt-brand, etc. */
+  --color-mt-brand:        var(--mt-brand);
+  --color-mt-brand-hover:  var(--mt-brand-hover);
+  --color-mt-brand-light:  var(--mt-brand-light);
+  --color-mt-ink:          var(--mt-ink);
+  --color-mt-ink-2:        var(--mt-ink-2);
+  --color-mt-ink-3:        var(--mt-ink-3);
+  --color-mt-border:       var(--mt-border);
+  --color-mt-surface:      var(--mt-surface);
+  --color-mt-surface-2:    var(--mt-surface-2);
+  --color-mt-success:      var(--mt-success);
+  --color-mt-success-bg:   var(--mt-success-bg);
+  --color-mt-warning:      var(--mt-warning);
+  --color-mt-warning-bg:   var(--mt-warning-bg);
+  --color-mt-danger:       var(--mt-danger);
+  --color-mt-danger-bg:    var(--mt-danger-bg);
+
+  /* ── Webstore wireframe tokens (Phase 2) ──────────────────────────────
+   * Per /home/ubuntu/wireframes/handoff/01_DESIGN_SYSTEM.md.
+   * Scoped to the public storefront via util classes (bg-paper, text-ink,
+   * border-rule, etc.). Do not touch admin / shadcn tokens above.
+   * `--color-brand` resolves to per-store accent (set by BrandRoot at
+   * runtime via `--brand-accent`); fallback is the wireframe default. */
+  --color-ink:        #111111;
+  --color-ink-soft:   #1a1a1a;
+  --color-graphite:   #2a2a2a;
+  --color-paper:      #fafaf7;
+  --color-paper-soft: #f5f3ee;
+  --color-paper-warm: #efece4;
+  --color-rule:       #e6e3da;
+  --color-rule-soft:  #d8d4c8;
+  --color-ws-muted:       #7a766c;
+  --color-ws-muted-soft:  #9c988e;
+  --color-brand:      var(--brand-accent, #c84e2a);
+
+  --font-serif-display: 'Cormorant Garamond', Georgia, serif;
+}
+
+/* 
+   SQUARE-STYLE — Clean, Light, Professional
+   Admin dashboard: light white base
+   Webstore: dark premium base (separate inline styles)
+   Brand font: Albert Sans (Effra CC equivalent)
+   Brand purple: #654BF9
+    */
+
+:root {
+  --radius: 0.5rem;
+
+  /*  MergeTasks Design Tokens 
+   * Use these CSS custom properties instead of hardcoded hex values.
+   * Brand colours
+   * -------------------------------------------------------------------------- */
+  --mt-brand:          #654BF9;   /* Primary brand purple */
+  --mt-brand-hover:    #5340D9;   /* Brand purple on hover */
+  --mt-brand-light:    #F5F3FF;   /* Brand purple tint (backgrounds) */
+  --mt-brand-ring:     rgba(101, 75, 249, 0.25); /* Focus ring */
+
+  /* Neutral scale */
+  --mt-ink:            #1A1A1A;   /* Primary text */
+  --mt-ink-2:          #525252;   /* Secondary text */
+  --mt-ink-3:          #737373;   /* Tertiary / muted text */
+  --mt-ink-4:          #A3A3A3;   /* Placeholder / disabled text */
+  --mt-border:         #E5E5E5;   /* Default border */
+  --mt-border-2:       #D4D4D4;   /* Stronger border */
+  --mt-surface:        #FAFAFA;   /* Subtle background */
+  --mt-surface-2:      #F5F5F5;   /* Card / panel background */
+  --mt-surface-3:      #F0F0F0;   /* Hover state background */
+  --mt-white:          #FFFFFF;
+
+  /* Semantic colours */
+  --mt-success:        #16A34A;
+  --mt-success-bg:     #F0FDF4;
+  --mt-success-border: #22C55E;
+  --mt-warning:        #D97706;
+  --mt-warning-bg:     #FEF3C7;
+  --mt-warning-border: #F59E0B;
+  --mt-danger:         #DC2626;
+  --mt-danger-hover:   #EF4444;
+  --mt-danger-bg:      #FEF2F2;
+  --mt-danger-border:  #FCA5A5;
+  --mt-info:           #2563EB;
+
+  /* Z-index scale */
+  --z-dropdown:        60;
+  --z-sticky:          70;
+  --z-overlay:         80;
+  --z-modal:           100;
+  --z-toast:           200;
+  --z-mobile-nav:      10001;
+
+  /* Light admin theme — Square Dashboard inspired */
+  --background: #FFFFFF;
+  --foreground: #1A1A1A;
+
+  --card: #FFFFFF;
+  --card-foreground: #1A1A1A;
+
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1A1A;
+
+  --primary: #654BF9;
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #F5F5F5;
+  --secondary-foreground: #525252;
+
+  --muted: #FAFAFA;
+  --muted-foreground: #737373;
+
+  --accent: #F5F5F5;
+  --accent-foreground: #1A1A1A;
+
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #E5E5E5;
+  --input: #E5E5E5;
+  --ring: #654BF9;
+
+  --chart-1: #654BF9;
+  --chart-2: #8B7AFC;
+  --chart-3: #A594FD;
+  --chart-4: #C4B5FD;
+  --chart-5: #DDD6FE;
+
+  /* Sidebar — white with subtle border */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #525252;
+  --sidebar-primary: #654BF9;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F5F5F5;
+  --sidebar-accent-foreground: #1A1A1A;
+  --sidebar-border: #E5E5E5;
+  --sidebar-ring: #654BF9;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Albert Sans', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Albert Sans', system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  /* ── Global font-size bump ──────────────────────────────────────────────
+   * The app uses hardcoded Tailwind pixel classes (text-[10px] … text-[18px]).
+   * Rather than rewriting every component (high regression risk), we remap
+   * those pixel sizes upward by ~1-2px for a more readable enterprise feel.
+   * This keeps all proportions intact — just bigger.                        */
+  .text-\[9px\]  { font-size: 10px !important; }
+  .text-\[10px\] { font-size: 11px !important; }
+  .text-\[11px\] { font-size: 12.5px !important; }
+  .text-\[12px\] { font-size: 13.5px !important; }
+  .text-\[13px\] { font-size: 14.5px !important; }
+  .text-\[14px\] { font-size: 15px !important; }
+  .text-\[15px\] { font-size: 16px !important; }
+  .text-\[16px\] { font-size: 17px !important; }
+  .text-\[17px\] { font-size: 18px !important; }
+  .text-\[18px\] { font-size: 19px !important; }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+
+  /*  Global interactive press feedback  */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled) {
+    transition: transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                box-shadow 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  [type="button"]:not(:disabled):active,
+  [type="submit"]:not(:disabled):active {
+    transform: scale(0.97);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  button:not(:disabled):hover,
+  [role="button"]:not([aria-disabled="true"]):hover,
+  [type="button"]:not(:disabled):hover,
+  [type="submit"]:not(:disabled):hover {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ── Global accessible focus ring — keyboard users only ──
+   * Applies a consistent 2px brand-purple ring on keyboard focus across
+   * all interactive elements. Mouse clicks do not trigger :focus-visible,
+   * so visual noise is avoided for pointer users. WCAG 2.1 AA compliant. */
+  :where(button, [role="button"], a[href], input, select, textarea,
+         [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--mt-brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Table rows and cards focus — inset ring so it doesn't clip */
+  :where(tr[role="button"], [role="row"][tabindex],
+         .card-interactive):focus-visible {
+    outline: 2px solid var(--mt-brand);
+    outline-offset: -2px;
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 3rem;
+      padding-right: 3rem;
+      max-width: 1400px;
+    }
+  }
+
+  /* Page transition — now handled by Framer Motion in DashboardLayout.tsx */
+
+  /*  Smooth fade-in for sections  */
+  .fade-in-up {
+    animation: fadeInUp 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    opacity: 0;
+  }
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /*  Staggered children animation  */
+  .stagger-children > * {
+    animation: fadeInUp 350ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    opacity: 0;
+  }
+  .stagger-children > *:nth-child(1) { animation-delay: 40ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 80ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 160ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 240ms; }
+  .stagger-children > *:nth-child(7) { animation-delay: 280ms; }
+  .stagger-children > *:nth-child(8) { animation-delay: 320ms; }
+
+  /*  Square-style metric label  */
+  .metric-label {
+    font-family: 'Albert Sans', system-ui, sans-serif;
+    font-size: 14.5px;
+    font-weight: 400;
+    color: var(--mt-ink-3);
+  }
+
+  /*  Square-style metric value  */
+  .metric-value {
+    font-family: 'Albert Sans', system-ui, sans-serif;
+    font-weight: 700;
+    color: var(--mt-ink);
+    letter-spacing: -0.02em;
+  }
+
+  /*  Label style — Square uses sentence case, subtle  */
+  .label-caps {
+    font-family: 'Albert Sans', system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 13.5px;
+    letter-spacing: 0.02em;
+    color: var(--mt-ink-3);
+  }
+
+  /*  Change badge — positive  */
+  .badge-positive {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mt-success);
+    background: var(--mt-success-bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  /*  Change badge — negative  */
+  .badge-negative {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mt-danger);
+    background: var(--mt-danger-bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  /*  Card hover — subtle shadow lift for non-interactive cards.  */
+  .card-hover {
+    transition: box-shadow 180ms ease, border-color 180ms ease;
+  }
+  .card-hover:hover {
+    box-shadow: 0 2px 10px rgba(17, 17, 17, 0.06);
+    border-color: var(--mt-border-2);
+  }
+
+  /*  Interactive card — adds a 1px lift + stronger shadow, for clickable tiles.  */
+  .card-interactive {
+    cursor: pointer;
+    transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+    will-change: transform;
+  }
+  .card-interactive:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(17, 17, 17, 0.08);
+    border-color: var(--mt-border-2);
+  }
+  .card-interactive:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(17, 17, 17, 0.06);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card-interactive, .card-hover { transition: none; }
+    .card-interactive:hover { transform: none; }
+  }
+
+  /*  Row hover — consistent tint for clickable rows (tables, lists).  */
+  .row-hover {
+    transition: background-color 150ms ease;
+  }
+  .row-hover:hover {
+    background-color: var(--mt-surface-2);
+  }
+
+  /*  Icon-button hover tint — for icon-only controls in headers/toolbars.  */
+  .icon-btn-hover {
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .icon-btn-hover:hover {
+    background-color: var(--mt-surface-2);
+    color: var(--mt-ink-1);
+  }
+
+  /*  Data mono  */
+  .data-mono {
+    font-family: 'Space Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*  Circular CTA button (ThemeForest template style — for webstore)  */
+  .btn-circle-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    position: relative;
+  }
+  .btn-circle-cta .circle {
+    width: 48px;
+    height: 48px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 300ms ease;
+  }
+  .btn-circle-cta:hover .circle {
+    border-color: var(--mt-brand);
+  }
+  .btn-circle-cta .circle::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--mt-brand);
+    transform: scale(0);
+    transition: transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .btn-circle-cta:hover .circle::before {
+    transform: scale(1);
+  }
+  .btn-circle-cta .circle svg {
+    position: relative;
+    z-index: 1;
+    transition: color 300ms ease;
+  }
+  .btn-circle-cta:hover .circle svg {
+    color: white;
+  }
+  .btn-circle-cta .btn-label {
+    font-family: 'Albert Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    position: relative;
+  }
+  .btn-circle-cta .btn-label::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 1px;
+    background: currentColor;
+    transition: width 300ms ease;
+  }
+  .btn-circle-cta:hover .btn-label::after {
+    width: 100%;
+  }
+
+  /*  Square-style outlined action button  */
+  .sq-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid var(--mt-border);
+    border-radius: 6px;
+    color: var(--mt-ink);
+    background: var(--mt-white);
+    transition: all 150ms ease;
+    cursor: pointer;
+  }
+  .sq-action-btn:hover {
+    border-color: var(--mt-border-2);
+    background: var(--mt-surface);
+  }
+  .sq-action-btn.primary {
+    background: var(--mt-brand);
+    color: var(--mt-white);
+    border-color: var(--mt-brand);
+  }
+  .sq-action-btn.primary:hover {
+    background: var(--mt-brand-hover);
+    border-color: var(--mt-brand-hover);
+  }
+
+  /*  Slide-in panel animation  */
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  /*  Skeleton shimmer — used by <Skeleton /> for premium loading feel  */
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /*  Bell wiggle — subtle attention-grab when there are unread notifications  */
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    15% { transform: rotate(-10deg); }
+    30% { transform: rotate(8deg); }
+    45% { transform: rotate(-6deg); }
+    60% { transform: rotate(4deg); }
+    75% { transform: rotate(-2deg); }
+  }
+  .animate-wiggle {
+    animation: wiggle 1.2s ease-in-out;
+    animation-iteration-count: 2;
+    transform-origin: 50% 0%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-wiggle { animation: none; }
+  }
+}

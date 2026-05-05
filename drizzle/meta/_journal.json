@@ -1,0 +1,713 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1775163041895,
+      "tag": "0000_chubby_ma_gnuci",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1775163623113,
+      "tag": "0001_ordinary_tony_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1775169417716,
+      "tag": "0002_ancient_meggan",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1775178449338,
+      "tag": "0003_wonderful_william_stryker",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1775181303570,
+      "tag": "0004_eager_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1775183207307,
+      "tag": "0005_modern_dakota_north",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1775186109628,
+      "tag": "0006_aspiring_diamondback",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1775187170468,
+      "tag": "0007_safe_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1775192511300,
+      "tag": "0008_fat_big_bertha",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1775226845558,
+      "tag": "0009_classy_karen_page",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1775238428732,
+      "tag": "0010_curvy_proemial_gods",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1775250231286,
+      "tag": "0011_overrated_sumo",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1775251928785,
+      "tag": "0012_tough_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1775274635368,
+      "tag": "0013_watery_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1775275789572,
+      "tag": "0014_thankful_jimmy_woo",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1775277769554,
+      "tag": "0015_amazing_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1775305146260,
+      "tag": "0016_breezy_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1775306643113,
+      "tag": "0017_reflective_wraith",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1775307404108,
+      "tag": "0018_vengeful_cerebro",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1775314349671,
+      "tag": "0019_public_barracuda",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1775324722214,
+      "tag": "0020_next_luminals",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1775327184698,
+      "tag": "0021_productive_roland_deschain",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1775358794892,
+      "tag": "0022_equal_black_panther",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1775363418185,
+      "tag": "0023_omniscient_catseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1775399414728,
+      "tag": "0024_demonic_spiral",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1775446816823,
+      "tag": "0025_daffy_genesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1775511908010,
+      "tag": "0026_dashing_lady_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1775511909000,
+      "tag": "0025_organizations_multitenancy",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1775511910000,
+      "tag": "0026_external_products_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1775511911000,
+      "tag": "0027_add_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1775511912000,
+      "tag": "0028_create_audit_log_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1775511913000,
+      "tag": "0029_pci_lockout_and_audit_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1775511914000,
+      "tag": "0030_complete_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1775511915000,
+      "tag": "0031_store_identity_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1775511916000,
+      "tag": "0032_add_refund_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1775511917000,
+      "tag": "0033_ai_audit_log_and_pending_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1775511918000,
+      "tag": "0034_org_ai_approval_level",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1775511919000,
+      "tag": "0035_copilot_memory_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1775511920000,
+      "tag": "0036_store_product_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1775511921000,
+      "tag": "0037_store_departments",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1775511922000,
+      "tag": "0038_stores_tax_rate",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1775511923000,
+      "tag": "0039_proposals_paid_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1775511924000,
+      "tag": "0040_purchase_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1775511925000,
+      "tag": "0041_po_notification_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1775511926000,
+      "tag": "0042_suppliers_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1775511927000,
+      "tag": "0043_checkout_enhancements",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "5",
+      "when": 1775511928000,
+      "tag": "0044_order_attribution_promo_custom",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "5",
+      "when": 1775511929000,
+      "tag": "0045_custom_request_notif_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "5",
+      "when": 1775511930000,
+      "tag": "0046_ai_product_page_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "5",
+      "when": 1775511931000,
+      "tag": "0047_agent_source_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1775511932000,
+      "tag": "0050_flashy_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "5",
+      "when": 1775511933000,
+      "tag": "0051_busy_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "5",
+      "when": 1775511934000,
+      "tag": "0052_divisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "5",
+      "when": 1775511935000,
+      "tag": "0053_stripe_webhook_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "5",
+      "when": 1775511936000,
+      "tag": "0054_document_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1775511937000,
+      "tag": "0055_org_default_tax_rate",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "5",
+      "when": 1775511938000,
+      "tag": "0056_store_divisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "5",
+      "when": 1775511939000,
+      "tag": "0057_multi_division",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1775511940000,
+      "tag": "0058_sso_division_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1775511941000,
+      "tag": "0059_print_requests_division",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1775511942000,
+      "tag": "0060_print_store_and_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "5",
+      "when": 1775511943000,
+      "tag": "0061_dept_approval_token_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "5",
+      "when": 1775511944000,
+      "tag": "0062_po_declined_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "5",
+      "when": 1775511945000,
+      "tag": "0063_po_aggregate",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "5",
+      "when": 1775511946000,
+      "tag": "0064_email_unsubscribes",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "5",
+      "when": 1775511947000,
+      "tag": "0065_store_users_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1775511948000,
+      "tag": "0066_proposal_acceptance_comment",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "5",
+      "when": 1775511949000,
+      "tag": "0067_fix_proposalOrderItems_ppId_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "5",
+      "when": 1775511950000,
+      "tag": "0068_proposal_cost_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "5",
+      "when": 1775511951000,
+      "tag": "0069_fix_proposal_product_child_renames",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "5",
+      "when": 1775511952000,
+      "tag": "0071_stores_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "5",
+      "when": 1775511953000,
+      "tag": "0072_orders_payment_failed_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "5",
+      "when": 1775511954000,
+      "tag": "0073_distributor_contact_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "5",
+      "when": 1775511955000,
+      "tag": "0074_client_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "5",
+      "when": 1775511956000,
+      "tag": "0075_org_last_agent_scan",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "5",
+      "when": 1775511957000,
+      "tag": "0076_client_tax_exempt_and_invoice_payment_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "5",
+      "when": 1775511958000,
+      "tag": "0077_invoice_stripe_and_public_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "5",
+      "when": 1775511959000,
+      "tag": "0078_estimate_builder",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "5",
+      "when": 1775511960000,
+      "tag": "0079_fix_document_sequence_null_org",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "5",
+      "when": 1775511961000,
+      "tag": "0080_notifications_print_request_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "5",
+      "when": 1777190400000,
+      "tag": "0081_unified_pricing_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "5",
+      "when": 1777276800000,
+      "tag": "0082_org_hierarchy_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "5",
+      "when": 1777363200000,
+      "tag": "0083_store_users_sso_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "5",
+      "when": 1777449600000,
+      "tag": "0084_imprint_zone_infrastructure",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "5",
+      "when": 1777536000000,
+      "tag": "0085_imprint_zone_is_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "5",
+      "when": 1777622400000,
+      "tag": "0086_virtual_proofs_imprint_zone",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "5",
+      "when": 1777622400000,
+      "tag": "0087_supplier_sync_infrastructure",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "5",
+      "when": 1777708800000,
+      "tag": "0088_fulfilled_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "5",
+      "when": 1777795200000,
+      "tag": "0089_estimate_lineitems_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "5",
+      "when": 1777881600000,
+      "tag": "0090_print_requests_location_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "5",
+      "when": 1777968000000,
+      "tag": "0091_notifications_payment_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "5",
+      "when": 1778054400000,
+      "tag": "0092_users_ai_approval_level",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "5",
+      "when": 1778140800000,
+      "tag": "0093_supplier_sync_jobs_nullable_org",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "5",
+      "when": 1778227200000,
+      "tag": "0094_supplier_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "5",
+      "when": 1778230800000,
+      "tag": "0095_admin_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "5",
+      "when": 1778317200000,
+      "tag": "0096_webstore_imprint_placement",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "5",
+      "when": 1779580800000,
+      "tag": "0097_client_logos_processed_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "5",
+      "when": 1782259200000,
+      "tag": "0098_webstore_render_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "5",
+      "when": 1782518400000,
+      "tag": "0099_webstore_render_per_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "5",
+      "when": 1782604800000,
+      "tag": "0100_self_signup_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "5",
+      "when": 1782691200000,
+      "tag": "0101_render_approval_columns",
+      "breakpoints": true
+    }
+  ]
+}
